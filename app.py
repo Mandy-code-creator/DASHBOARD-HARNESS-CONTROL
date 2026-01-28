@@ -1,86 +1,142 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import requests
+from io import StringIO
 
-st.set_page_config(
-    page_title="GI Hardness Dashboard",
-    layout="wide"
-)
+# ================================
+# CONFIG
+# ================================
+DATA_URL = "https://docs.google.com/spreadsheets/d/1GdnY09hJ2qVHuEBAIJ-eU6B5z8ZdgcGf4P7ZjlAt4JI/export?format=csv"
 
-st.title("GI Hardness & Mechanical Property Dashboard")
+st.set_page_config(page_title="Material-level Hardness Detail", layout="wide")
+st.title("📊 Material-level Hardness & Mechanical Detail (Offline only)")
 
-# =========================
-# LOAD DATA FROM GOOGLE SHEET
-# =========================
+# ================================
+# LOAD DATA
+# ================================
 @st.cache_data
-def load_data():
-    sheet_id = "PUT_YOUR_SHEET_ID_HERE"
-    url = f"https://docs.google.com/spreadsheets/d/1GdnY09hJ2qVHuEBAIJ-eU6B5z8ZdgcGf4P7ZjlAt4JI/export?format=csv"
-    df = pd.read_csv(url)
-    return df
+def load_data(url):
+    r = requests.get(url)
+    r.encoding = "utf-8"
+    return pd.read_csv(StringIO(r.text))
 
-df = load_data()
+raw = load_data(DATA_URL)
 
-st.subheader("Raw data preview")
-st.dataframe(df.head())
+# ================================
+# COLUMN MAPPING
+# ================================
+column_mapping = {
+    "PRODUCT SPECIFICATION CODE": "Product_Spec",
+    "HR STEEL GRADE": "Material",
+    "TOP COATMASS": "Top_Coatmass",
+    "ORDER GAUGE": "Order_Gauge",
+    "COIL NO": "Coil_No",
+    "QUALITY_CODE": "Quality_Code",
+    "Standard Hardness": "Std_Hardness",
+    "HARDNESS 冶金": "Hardness_LAB",
+    "HARDNESS 鍍鋅線 C": "Hardness_LINE",
+    "TENSILE_YIELD": "YS",
+    "TENSILE_TENSILE": "TS",
+    "TENSILE_ELONG": "EL",
+}
 
-# =========================
-# SELECT HARDNESS SOURCE
-# =========================
-st.sidebar.header("Settings")
-hardness_source = st.sidebar.radio(
-    "Hardness source",
-    ["HARDNESS 冶金", "HARDNESS 鍍鋅線 C"]
+df = raw.rename(columns={k: v for k, v in column_mapping.items() if k in raw.columns})
+
+# ================================
+# REQUIRED COLUMNS CHECK
+# ================================
+required_cols = [
+    "Product_Spec", "Material", "Top_Coatmass", "Order_Gauge",
+    "Coil_No", "Quality_Code",
+    "Std_Hardness", "Hardness_LAB", "Hardness_LINE",
+    "YS", "TS", "EL"
+]
+
+missing = [c for c in required_cols if c not in df.columns]
+if missing:
+    st.error(f"❌ Missing required columns: {missing}")
+    st.stop()
+
+# ================================
+# FORCE NUMERIC (OFFLINE MEASUREMENTS)
+# ================================
+for c in ["Std_Hardness", "Hardness_LAB", "Hardness_LINE", "YS", "TS", "EL"]:
+    df[c] = pd.to_numeric(df[c], errors="coerce")
+
+# ================================
+# QUALITY CODE FILTER (BUTTON STYLE)
+# ================================
+st.sidebar.header("🎛 QUALITY CODE")
+quality_codes = sorted(df["Quality_Code"].dropna().unique())
+selected_qc = st.sidebar.radio("Select Quality Code", quality_codes)
+
+df = df[df["Quality_Code"] == selected_qc]
+
+# ================================
+# GROUP CONDITIONS (STRICT)
+# ================================
+GROUP_COLS = ["Product_Spec", "Material", "Top_Coatmass", "Order_Gauge"]
+
+# ================================
+# COUNT COILS PER CONDITION
+# ================================
+count_df = (
+    df.groupby(GROUP_COLS)
+      .agg(N_Coils=("Coil_No", "nunique"))
+      .reset_index()
 )
 
-# =========================
-# CREATE ANALYSIS COLUMNS
-# =========================
-HARDNESS = df[hardness_source]
-HMAX = df["Standard Hardness"]
+# ================================
+# ONLY CONDITIONS WITH >= 30 COILS
+# ================================
+valid_conditions = count_df[count_df["N_Coils"] >= 30]
 
-# ΔH to upper spec
-df["ΔH_spec"] = HMAX - HARDNESS
+if valid_conditions.empty:
+    st.warning("⚠️ No condition has ≥ 30 coils")
+    st.stop()
 
-# Hardness band
-def hardness_band(x):
-    if x >= 10:
-        return "≥10"
-    elif x >= 7:
-        return "7–10"
-    elif x >= 5:
-        return "5–7"
-    elif x >= 3:
-        return "3–5"
-    else:
-        return "<3"
+# ================================
+# SORT CONDITIONS BY SAMPLE SIZE
+# ================================
+valid_conditions = valid_conditions.sort_values("N_Coils", ascending=False)
 
-df["Hardness_Band"] = df["ΔH_spec"].apply(hardness_band)
+# ================================
+# DISPLAY TABLES
+# ================================
+st.subheader("📋 Coil-level Data (Offline measurements only)")
+st.caption("• 1 table = 1 Material + Coatmass + Gauge  \n• No averaging, no SPC, no batch, no phase  \n• ≥ 30 coils only")
 
-# Decision zone
-def decision_zone(x):
-    if x >= 7:
-        return "SAFE"
-    elif x >= 5:
-        return "WATCH"
-    else:
-        return "RISK"
+for _, cond in valid_conditions.iterrows():
 
-df["Zone"] = df["ΔH_spec"].apply(decision_zone)
+    spec, mat, coat, gauge, n = (
+        cond["Product_Spec"],
+        cond["Material"],
+        cond["Top_Coatmass"],
+        cond["Order_Gauge"],
+        int(cond["N_Coils"])
+    )
 
-# =========================
-# SHOW RESULT TABLE
-# =========================
-st.subheader("Analysis table")
-st.dataframe(
-    df[
-        [
-            hardness_source,
-            "Standard Hardness",
-            "ΔH_spec",
-            "Hardness_Band",
-            "Zone",
-            "TENSILE_ELONG",
-        ]
-    ].head(20)
-)
+    st.markdown(
+        f"## 🧱 Product Spec: `{spec}`  \n"
+        f"**Material:** {mat} | **Coatmass:** {coat} | **Gauge:** {gauge}  \n"
+        f"➡️ **n = {n} coils**"
+    )
+
+    table_df = df[
+        (df["Product_Spec"] == spec) &
+        (df["Material"] == mat) &
+        (df["Top_Coatmass"] == coat) &
+        (df["Order_Gauge"] == gauge)
+    ][[
+        "Coil_No",
+        "Quality_Code",
+        "Std_Hardness",
+        "Hardness_LAB",
+        "Hardness_LINE",
+        "YS", "TS", "EL"
+    ]].sort_values("Coil_No")
+
+    st.dataframe(table_df, use_container_width=True)
+
+st.success("✅ Clean report generated – đúng logic nghiệp vụ")
