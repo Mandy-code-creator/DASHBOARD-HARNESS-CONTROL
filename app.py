@@ -31,7 +31,7 @@ column_mapping = {
     "HR STEEL GRADE": "Material",
     "TOP COATMASS": "Top_Coatmass",
     "ORDER GAUGE": "Order_Gauge",
-    "COIL NO": "Coil_No",
+    "COIL NO": "COIL_NO",
     "QUALITY_CODE": "Quality_Code",
     "Standard Hardness": "Std_Hardness",
     "HARDNESS 冶金": "Hardness_LAB",
@@ -48,7 +48,7 @@ df = raw.rename(columns={k: v for k, v in column_mapping.items() if k in raw.col
 # ================================
 required_cols = [
     "Product_Spec", "Material", "Top_Coatmass", "Order_Gauge",
-    "Coil_No", "Quality_Code",
+    "COIL_NO", "Quality_Code",
     "Std_Hardness", "Hardness_LAB", "Hardness_LINE",
     "YS", "TS", "EL"
 ]
@@ -83,7 +83,7 @@ GROUP_COLS = ["Product_Spec", "Material", "Top_Coatmass", "Order_Gauge"]
 # ================================
 count_df = (
     df.groupby(GROUP_COLS)
-      .agg(N_Coils=("Coil_No", "nunique"))
+      .agg(N_Coils=("COIL_NO", "nunique"))
       .reset_index()
 )
 
@@ -129,13 +129,13 @@ for _, cond in valid_conditions.iterrows():
         (df["Top_Coatmass"] == coat) &
         (df["Order_Gauge"] == gauge)
     ][[
-        "Coil_No",
+        "COIL_NO",
         "Quality_Code",
         "Std_Hardness",
         "Hardness_LAB",
         "Hardness_LINE",
         "YS", "TS", "EL"
-    ]].sort_values("Coil_No")
+    ]].sort_values("COIL_NO")
 
     st.dataframe(table_df, use_container_width=True)
 
