@@ -33,7 +33,7 @@ column_mapping = {
     "ORDER GAUGE": "Order_Gauge",
     "COIL NO": "COIL_NO",
     "QUALITY_CODE": "Quality_Code",
-    "Standard Hardness": "Std_Hardness",
+    "Standard Hardness": "Std_Range_Text",
     "HARDNESS 冶金": "Hardness_LAB",
     "HARDNESS 鍍鋅線 C": "Hardness_LINE",
     "TENSILE_YIELD": "YS",
@@ -49,7 +49,7 @@ df = raw.rename(columns={k: v for k, v in column_mapping.items() if k in raw.col
 required_cols = [
     "Product_Spec", "Material", "Top_Coatmass", "Order_Gauge",
     "COIL_NO", "Quality_Code",
-    "Std_Hardness", "Hardness_LAB", "Hardness_LINE",
+    "Std_Range_Text", "Hardness_LAB", "Hardness_LINE",
     "YS", "TS", "EL"
 ]
 
@@ -59,9 +59,26 @@ if missing:
     st.stop()
 
 # ================================
+# SPLIT STANDARD HARDNESS TEXT → MIN / MAX
+# ================================
+def split_std_range(x):
+    if isinstance(x, str) and "~" in x:
+        try:
+            lo, hi = x.split("~")
+            return pd.Series([float(lo), float(hi)])
+        except:
+            return pd.Series([np.nan, np.nan])
+    return pd.Series([np.nan, np.nan])
+
+df[["Std_Min", "Std_Max"]] = df["Std_Range_Text"].apply(split_std_range)
+
+# ❌ DROP ORIGINAL STANDARD HARDNESS COLUMN
+df = df.drop(columns=["Std_Range_Text"])
+
+# ================================
 # FORCE NUMERIC (OFFLINE MEASUREMENTS)
 # ================================
-for c in ["Std_Hardness", "Hardness_LAB", "Hardness_LINE", "YS", "TS", "EL"]:
+for c in ["Hardness_LAB", "Hardness_LINE", "YS", "TS", "EL"]:
     df[c] = pd.to_numeric(df[c], errors="coerce")
 
 # ================================
@@ -96,16 +113,18 @@ if valid_conditions.empty:
     st.warning("⚠️ No condition has ≥ 30 coils")
     st.stop()
 
-# ================================
-# SORT CONDITIONS BY SAMPLE SIZE
-# ================================
 valid_conditions = valid_conditions.sort_values("N_Coils", ascending=False)
 
 # ================================
 # DISPLAY TABLES
 # ================================
 st.subheader("📋 Coil-level Data (Offline measurements only)")
-st.caption("• 1 table = 1 Material + Coatmass + Gauge  \n• No averaging, no SPC, no batch, no phase  \n• ≥ 30 coils only")
+st.caption(
+    "• 1 table = 1 Material + Coatmass + Gauge  \n"
+    "• Standard Hardness → Std_Min / Std_Max  \n"
+    "• No averaging, no SPC, no batch  \n"
+    "• ≥ 30 coils only"
+)
 
 for _, cond in valid_conditions.iterrows():
 
@@ -130,8 +149,8 @@ for _, cond in valid_conditions.iterrows():
         (df["Order_Gauge"] == gauge)
     ][[
         "COIL_NO",
-        "Quality_Code",
-        "Std_Hardness",
+        "Std_Min",
+        "Std_Max",
         "Hardness_LAB",
         "Hardness_LINE",
         "YS", "TS", "EL"
