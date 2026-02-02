@@ -59,7 +59,7 @@ if missing:
     st.stop()
 
 # ================================
-# SPLIT STANDARD HARDNESS TEXT → MIN / MAX
+# SPLIT STANDARD HARDNESS
 # ================================
 def split_std_range(x):
     if isinstance(x, str) and "~" in x:
@@ -71,91 +71,162 @@ def split_std_range(x):
     return pd.Series([np.nan, np.nan])
 
 df[["Std_Min", "Std_Max"]] = df["Std_Range_Text"].apply(split_std_range)
-
-# ❌ DROP ORIGINAL STANDARD HARDNESS COLUMN
 df = df.drop(columns=["Std_Range_Text"])
 
 # ================================
-# FORCE NUMERIC (OFFLINE MEASUREMENTS)
+# FORCE NUMERIC
 # ================================
 for c in ["Hardness_LAB", "Hardness_LINE", "YS", "TS", "EL"]:
     df[c] = pd.to_numeric(df[c], errors="coerce")
 
 # ================================
-# QUALITY CODE FILTER (BUTTON STYLE)
+# SIDEBAR – TASK
+# ================================
+st.sidebar.header("🧩 ANALYSIS TASK")
+task = st.sidebar.radio(
+    "Select analysis task",
+    [
+        "Summary (raw tables)",
+        "QA Strict Spec Check (1 NG = FAIL)"
+    ],
+    index=0
+)
+
+# ================================
+# QUALITY CODE FILTER
 # ================================
 st.sidebar.header("🎛 QUALITY CODE")
 quality_codes = sorted(df["Quality_Code"].dropna().unique())
 selected_qc = st.sidebar.radio("Select Quality Code", quality_codes)
-
 df = df[df["Quality_Code"] == selected_qc]
 
 # ================================
-# GROUP CONDITIONS (STRICT)
+# GROUP + COUNT (>=30 coils)
 # ================================
 GROUP_COLS = ["Product_Spec", "Material", "Top_Coatmass", "Order_Gauge"]
 
-# ================================
-# COUNT COILS PER CONDITION
-# ================================
 count_df = (
     df.groupby(GROUP_COLS)
       .agg(N_Coils=("COIL_NO", "nunique"))
       .reset_index()
 )
 
-# ================================
-# ONLY CONDITIONS WITH >= 30 COILS
-# ================================
-valid_conditions = count_df[count_df["N_Coils"] >= 30]
+valid_conditions = (
+    count_df[count_df["N_Coils"] >= 30]
+    .sort_values("N_Coils", ascending=False)
+)
 
 if valid_conditions.empty:
     st.warning("⚠️ No condition has ≥ 30 coils")
     st.stop()
 
-valid_conditions = valid_conditions.sort_values("N_Coils", ascending=False)
+# =========================================================
+# SUMMARY
+# =========================================================
+if task == "Summary (raw tables)":
 
-# ================================
-# DISPLAY TABLES
-# ================================
-st.subheader("📋 Coil-level Data (Offline measurements only)")
-st.caption(
-    "• 1 table = 1 Material + Coatmass + Gauge  \n"
-    "• Standard Hardness → Std_Min / Std_Max  \n"
-    "• No averaging, no SPC, no batch  \n"
-    "• ≥ 30 coils only"
-)
+    st.subheader("📋 Coil-level Data (Offline measurements only)")
+    st.caption("≥ 30 coils | No averaging | Raw data only")
 
-for _, cond in valid_conditions.iterrows():
+    for _, cond in valid_conditions.iterrows():
 
-    spec, mat, coat, gauge, n = (
-        cond["Product_Spec"],
-        cond["Material"],
-        cond["Top_Coatmass"],
-        cond["Order_Gauge"],
-        int(cond["N_Coils"])
-    )
+        spec, mat, coat, gauge, n = (
+            cond["Product_Spec"],
+            cond["Material"],
+            cond["Top_Coatmass"],
+            cond["Order_Gauge"],
+            int(cond["N_Coils"])
+        )
 
-    st.markdown(
-        f"## 🧱 Product Spec: `{spec}`  \n"
-        f"**Material:** {mat} | **Coatmass:** {coat} | **Gauge:** {gauge}  \n"
-        f"➡️ **n = {n} coils**"
-    )
+        st.markdown(
+            f"## 🧱 Product Spec: `{spec}`  \n"
+            f"**Material:** {mat} | **Coatmass:** {coat} | **Gauge:** {gauge}  \n"
+            f"➡️ **n = {n} coils**"
+        )
 
-    table_df = df[
-        (df["Product_Spec"] == spec) &
-        (df["Material"] == mat) &
-        (df["Top_Coatmass"] == coat) &
-        (df["Order_Gauge"] == gauge)
-    ][[
-        "COIL_NO",
-        "Std_Min",
-        "Std_Max",
-        "Hardness_LAB",
-        "Hardness_LINE",
-        "YS", "TS", "EL"
-    ]].sort_values("COIL_NO")
+        table_df = df[
+            (df["Product_Spec"] == spec) &
+            (df["Material"] == mat) &
+            (df["Top_Coatmass"] == coat) &
+            (df["Order_Gauge"] == gauge)
+        ][[
+            "COIL_NO",
+            "Std_Min", "Std_Max",
+            "Hardness_LAB", "Hardness_LINE",
+            "YS", "TS", "EL"
+        ]].sort_values("COIL_NO")
 
-    st.dataframe(table_df, use_container_width=True)
+        st.dataframe(table_df, use_container_width=True)
 
-st.success("✅ Clean report generated – đúng logic nghiệp vụ")
+# =========================================================
+# QA STRICT SPEC CHECK
+# =========================================================
+if task == "QA Strict Spec Check (1 NG = FAIL)":
+
+    st.subheader("🧪 QA Strict Spec Check – Coil level")
+    st.caption("If ANY coil is out of spec → FAIL")
+
+    for _, cond in valid_conditions.iterrows():
+
+        spec, mat, coat, gauge, n = (
+            cond["Product_Spec"],
+            cond["Material"],
+            cond["Top_Coatmass"],
+            cond["Order_Gauge"],
+            int(cond["N_Coils"])
+        )
+
+        sub = df[
+            (df["Product_Spec"] == spec) &
+            (df["Material"] == mat) &
+            (df["Top_Coatmass"] == coat) &
+            (df["Order_Gauge"] == gauge)
+        ].copy()
+
+        lo = sub["Std_Min"].iloc[0]
+        hi = sub["Std_Max"].iloc[0]
+
+        # ===== NG LOGIC =====
+        sub["NG_LAB"]  = (sub["Hardness_LAB"]  < lo) | (sub["Hardness_LAB"]  > hi)
+        sub["NG_LINE"] = (sub["Hardness_LINE"] < lo) | (sub["Hardness_LINE"] > hi)
+
+        sub["COIL_NG"] = sub["NG_LAB"] | sub["NG_LINE"]
+
+        # ===== DELTA & OUT OF LIMIT =====
+        sub["Δ_LINE_LAB"] = sub["Hardness_LINE"] - sub["Hardness_LAB"]
+
+        sub["OOL_LAB"] = np.where(
+            sub["Hardness_LAB"] > hi, sub["Hardness_LAB"] - hi,
+            np.where(sub["Hardness_LAB"] < lo, lo - sub["Hardness_LAB"], 0)
+        )
+
+        sub["OOL_LINE"] = np.where(
+            sub["Hardness_LINE"] > hi, sub["Hardness_LINE"] - hi,
+            np.where(sub["Hardness_LINE"] < lo, lo - sub["Hardness_LINE"], 0)
+        )
+
+        n_out = sub[sub["COIL_NG"]]["COIL_NO"].nunique()
+        qa_result = "FAIL" if n_out > 0 else "PASS"
+
+        st.markdown(
+            f"## 🧱 Product Spec: `{spec}`  \n"
+            f"**Material:** {mat} | **Coatmass:** {coat} | **Gauge:** {gauge}  \n"
+            f"➡️ **n = {n} coils**  \n"
+            f"❌ **n_out = {n_out} coils out of spec**  \n"
+            f"🧪 **QA Result:** `{qa_result}`"
+        )
+
+        show_cols = [
+            "COIL_NO",
+            "Std_Min", "Std_Max",
+            "Hardness_LAB", "Hardness_LINE",
+            "Δ_LINE_LAB",
+            "OOL_LAB", "OOL_LINE",
+            "NG_LAB", "NG_LINE",
+            "YS", "TS", "EL"
+        ]
+
+        st.dataframe(
+            sub[show_cols].sort_values("COIL_NO"),
+            use_container_width=True
+        )
