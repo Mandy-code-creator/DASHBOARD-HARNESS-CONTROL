@@ -3,7 +3,12 @@ import pandas as pd
 import numpy as np
 import requests
 from io import StringIO
-
+# ================================
+# BUTTON REFRESH GOOGLE SHEET
+# ================================
+if st.sidebar.button("🔄 Refresh Data"):
+    st.cache_data.clear()
+    st.rerun()
 # ================================
 # CONFIG
 # ================================
@@ -22,13 +27,25 @@ def load_data(url):
     return pd.read_csv(StringIO(r.text))
 
 raw = load_data(DATA_URL)
+# ================================
+# FORCE FIND & CREATE METALLIC TYPE COLUMN
+# ================================
+metal_col = None
+for c in raw.columns:
+    if "METALLIC" in c.upper() and "COATING" in c.upper():
+        metal_col = c
+        break
 
-# ================================
-# COLUMN MAPPING
-# ================================
+if metal_col is None:
+    st.error("❌ Cannot find METALLIC COATING TYPE column in raw data")
+    st.stop()
+
+raw["Metallic_Type"] = raw[metal_col]
+
 column_mapping = {
     "PRODUCT SPECIFICATION CODE": "Product_Spec",
     "HR STEEL GRADE": "Material",
+    "Claasify material": "Rolling_Type",
     "TOP COATMASS": "Top_Coatmass",
     "ORDER GAUGE": "Order_Gauge",
     "COIL NO": "COIL_NO",
@@ -48,9 +65,10 @@ df = raw.rename(columns={k: v for k, v in column_mapping.items() if k in raw.col
 # ================================
 required_cols = [
     "Product_Spec", "Material", "Top_Coatmass", "Order_Gauge",
-    "COIL_NO", "Quality_Code",
+    "COIL_NO", "Quality_Code", "Rolling_Type", 
     "Std_Range_Text", "Hardness_LAB", "Hardness_LINE",
-    "YS", "TS", "EL"
+    "YS", "TS", "EL", "Metallic_Type",
+
 ]
 
 missing = [c for c in required_cols if c not in df.columns]
@@ -91,6 +109,33 @@ task = st.sidebar.radio(
     ],
     index=0
 )
+# ================================
+# ROLLING TYPE FILTER (FROM SHEET)
+# ================================
+st.sidebar.header("🎛 ROLLING TYPE")
+
+rolling_types = sorted(df["Rolling_Type"].dropna().unique())
+
+selected_rolling = st.sidebar.radio(
+    "Select Rolling Type",
+    rolling_types
+)
+
+df = df[df["Rolling_Type"] == selected_rolling]
+
+# ================================
+# METALLIC COATING TYPE FILTER
+# ================================
+st.sidebar.header("🎛 METALLIC COATING TYPE")
+
+metallic_types = sorted(df["Metallic_Type"].dropna().unique())
+
+selected_metallic = st.sidebar.radio(
+    "Select Metallic Coating Type",
+    metallic_types
+)
+
+df = df[df["Metallic_Type"] == selected_metallic]
 
 # ================================
 # QUALITY CODE FILTER
@@ -99,11 +144,13 @@ st.sidebar.header("🎛 QUALITY CODE")
 quality_codes = sorted(df["Quality_Code"].dropna().unique())
 selected_qc = st.sidebar.radio("Select Quality Code", quality_codes)
 df = df[df["Quality_Code"] == selected_qc]
+# ================================
+
 
 # ================================
 # GROUP + COUNT (>=30 coils)
 # ================================
-GROUP_COLS = ["Product_Spec", "Material", "Top_Coatmass", "Order_Gauge"]
+GROUP_COLS = ["Product_Spec", "Material", "Metallic_Type", "Top_Coatmass", "Order_Gauge"]
 
 count_df = (
     df.groupby(GROUP_COLS)
