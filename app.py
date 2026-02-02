@@ -14,7 +14,15 @@ import numpy as np
 import requests
 from io import StringIO
 import matplotlib.pyplot as plt
-
+from io import BytesIO
+# ================================
+# UTILITY FUNCTION
+# ================================
+def fig_to_png(fig, dpi=200):
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight")
+    buf.seek(0)
+    return buf
 # ================================
 # PAGE CONFIG
 # ================================
@@ -235,6 +243,14 @@ for _, cond in valid_conditions.iterrows():
             ax.set_title("Hardness LAB")
             ax.grid(alpha=0.3)
             st.pyplot(fig)
+            img = fig_to_png(fig)
+            st.download_button(
+            "⬇️ Download LAB Trend",
+            data=img,
+            file_name=f"{spec}_LAB_trend.png",
+            mime="image/png",
+            key=f"dl_lab_{spec}_{mat}_{gauge}_{coat}"
+            )
 
         with c2:
             fig, ax = plt.subplots(figsize=(5,3))
@@ -246,6 +262,15 @@ for _, cond in valid_conditions.iterrows():
             ax.set_title("Hardness LINE")
             ax.grid(alpha=0.3)
             st.pyplot(fig)
+            img = fig_to_png(fig)
+            st.download_button(
+            "⬇️ Download LINE Trend",
+            data=img,
+            file_name=f"{spec}_LINE_trend.png",
+            mime="image/png",
+            key=f"dl_line_{spec}_{mat}_{gauge}_{coat}"
+            )
+
 
     # ================================
     # ================================
@@ -335,11 +360,20 @@ for _, cond in valid_conditions.iterrows():
         )
     
         # ===== FINAL STYLE =====
-        ax.set_title(f"{spec} | Hardness Distribution + Normal Curve")
+        ax.set_title(f"{spec} | Hardness Distribution")
         ax.set_xlabel("HRB")
         ax.set_ylabel("Count")
         ax.legend(bbox_to_anchor=(1.02, 0.5), loc="center left", frameon=False)
         ax.grid(alpha=0.3)
     
         st.pyplot(fig)
+        img = fig_to_png(fig)
+        st.download_button(
+            "⬇️ Download Distribution Chart",
+            data=img,
+            file_name=f"{spec}_hardness_distribution.png",
+            mime="image/png",
+            key=f"dl_dist_{spec}_{mat}_{gauge}_{coat}"
+        )
+
 
