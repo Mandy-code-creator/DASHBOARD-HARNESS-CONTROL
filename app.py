@@ -158,8 +158,14 @@ df = df[
 
 view_mode = st.sidebar.radio(
     "📊 View Mode",
-    ["📋 Data Table", "📈 Trend (LAB / LINE)", "📊 Distribution (LAB + LINE)"]
+    [
+        "📋 Data Table",
+        "📈 Trend (LAB / LINE)",
+        "📊 Distribution (LAB + LINE)",
+        "🛠 Hardness → TS/YS/EL"   # <-- mới
+    ]
 )
+
 
 # ================================
 # GROUP CONDITION
@@ -294,4 +300,67 @@ for _, g in valid.iterrows():
            data=buf,
            file_name=f"distribution_{g['Material']}_{g['Gauge_Range']}.png",
            mime="image/png"
-   )
+        )
+    elif view_mode == "🛠 Hardness → TS/YS/EL":
+        # 1️⃣ Binning Hardness
+        bins = [0, 56, 58, 60, 62, 100]  # điều chỉnh theo nhu cầu
+        labels = ["<56","56-58","58-60","60-62",">62"]
+        sub["HRB_bin"] = pd.cut(sub["Hardness_LAB"], bins=bins, labels=labels)
+    
+        # 2️⃣ Lấy giới hạn cơ tính từ sheet
+        sub["TS_LSL"] = sub["Standard TS min"]
+        sub["TS_USL"] = sub["Standard TS max"]
+        sub["YS_LSL"] = sub["Standard YS min"]
+        sub["YS_USL"] = sub["Standard YS max"]
+        sub["EL_LSL"] = sub["Standard EL min"]
+        sub["EL_USL"] = sub["Standard EL max"]
+    
+        sub = sub.dropna(subset=["TS_LSL","TS_USL","YS_LSL","YS_USL","EL_LSL","EL_USL"])
+    
+        # 3️⃣ Summary min/mean/max
+        summary = sub.groupby("HRB_bin").agg(
+            N_coils=("COIL_NO","count"),
+            TS_mean=("TS","mean"),
+            TS_min=("TS","min"),
+            TS_max=("TS","max"),
+            YS_mean=("YS","mean"),
+            YS_min=("YS","min"),
+            YS_max=("YS","max"),
+            EL_mean=("EL","mean"),
+            EL_min=("EL","min"),
+            EL_max=("EL","max")
+        ).reset_index()
+        st.markdown("### 🔹 Mechanical Properties per Hardness Range (Current Distribution)")
+        st.dataframe(summary, use_container_width=True)
+    
+        # 4️⃣ Line plot
+        fig, ax = plt.subplots(figsize=(8,4))
+        x = np.arange(len(summary))
+    
+        ax.plot(x, summary["TS_mean"], marker="o", color="blue", label="TS Mean")
+        ax.fill_between(x, summary["TS_min"], summary["TS_max"], color="blue", alpha=0.2, label="TS Min-Max")
+    
+        ax.plot(x, summary["YS_mean"], marker="s", color="green", label="YS Mean")
+        ax.fill_between(x, summary["YS_min"], summary["YS_max"], color="green", alpha=0.2, label="YS Min-Max")
+    
+        ax.plot(x, summary["EL_mean"], marker="^", color="orange", label="EL Mean")
+        ax.fill_between(x, summary["EL_min"], summary["EL_max"], color="orange", alpha=0.2, label="EL Min-Max")
+    
+        ax.set_xticks(x)
+        ax.set_xticklabels(summary["HRB_bin"])
+        ax.set_xlabel("Hardness (HRB bin)")
+        ax.set_ylabel("Mechanical Properties")
+        ax.set_title("Hardness vs TS/YS/EL Range (Current)")
+        ax.grid(alpha=0.3)
+        ax.legend(loc="best")
+        plt.tight_layout()
+        st.pyplot(fig)
+    
+        # 5️⃣ Download chart
+        buf = fig_to_png(fig)
+        st.download_button(
+            label="📥 Download Hardness → TS/YS/EL Chart",
+            data=buf,
+            file_name=f"Hardness_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
+            mime="image/png"
+        )
