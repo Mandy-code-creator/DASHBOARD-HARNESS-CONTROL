@@ -155,14 +155,14 @@ df = df[
     (df["Metallic_Type"] == metal) &
     (df["Quality_Group"] == qgroup)
 ]
-
 view_mode = st.sidebar.radio(
     "📊 View Mode",
     [
         "📋 Data Table",
         "📈 Trend (LAB / LINE)",
         "📊 Distribution (LAB + LINE)",
-        "🛠 Hardness → TS/YS/EL"   # <-- mới
+        "🛠 Hardness → TS/YS/EL",
+        "📊 TS/YS/EL Trend & Distribution"  # <-- THÊM VÀO ĐÂY
     ]
 )
 
@@ -173,9 +173,9 @@ view_mode = st.sidebar.radio(
 GROUP_COLS = ["Rolling_Type","Metallic_Type","Quality_Group","Gauge_Range","Material"]
 
 cnt = df.groupby(GROUP_COLS).agg(N_Coils=("COIL_NO","nunique")).reset_index()
-valid = cnt[cnt["N_Coils"] >= 30]
+valid = cnt[cnt["N_Coils"] >= 15]
 if valid.empty:
-    st.warning("⚠️ No group with ≥30 coils")
+    st.warning("⚠️ No group with ≥15 coils")
     st.stop()
 
 # ================================
@@ -373,3 +373,128 @@ for _, g in valid.iterrows():
             file_name=f"Hardness_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
             mime="image/png"
         )
+    elif view_mode == "📊 TS/YS/EL Trend & Distribution":
+        import re, uuid
+    
+        # ===== 1️⃣ Binning Hardness
+        bins = [0, 56, 58, 60, 62, 100]
+        labels = ["<56", "56-58", "58-60", "60-62", "≥62"]
+        sub["HRB_bin"] = pd.cut(sub["Hardness_LAB"], bins=bins, labels=labels, right=False)
+    
+        mech_cols = ["Standard TS min", "Standard TS max",
+                     "Standard YS min", "Standard YS max",
+                     "Standard EL min", "Standard EL max"]
+        sub = sub.dropna(subset=mech_cols)
+    
+        hrb_bins = [b for b in labels if b in sub["HRB_bin"].unique()]
+    
+        # ===== 2️⃣ Hàm check NG safe NA
+        def check_ng(series, lsl, usl):
+            series = series.fillna(0)
+            if lsl == 0 and usl == 0:
+                return pd.Series([False]*len(series), index=series.index)
+            elif lsl != 0 and usl == 0:
+                return series < lsl
+            elif lsl == 0 and usl != 0:
+                return series > usl
+            else:
+                return (series < lsl) | (series > usl)
+    
+        # ===== 3️⃣ Loop HRB bin
+        for hrb in hrb_bins:
+            df_bin = sub[sub["HRB_bin"] == hrb].sort_values("COIL_NO")
+            N = len(df_bin)
+            if N == 0:
+                continue
+    
+            # Giới hạn cơ tính
+            TS_LSL, TS_USL = df_bin["Standard TS min"].iloc[0], df_bin["Standard TS max"].iloc[0]
+            YS_LSL, YS_USL = df_bin["Standard YS min"].iloc[0], df_bin["Standard YS max"].iloc[0]
+            EL_LSL, EL_USL = df_bin["Standard EL min"].iloc[0], df_bin["Standard EL max"].iloc[0]
+    
+            # Tạo cột NG safe
+            df_bin["NG_TS"] = check_ng(df_bin["TS"], TS_LSL, TS_USL)
+            df_bin["NG_YS"] = check_ng(df_bin["YS"], YS_LSL, YS_USL)
+            df_bin["NG_EL"] = check_ng(df_bin["EL"], EL_LSL, EL_USL)
+    
+            st.markdown(f"### HRB bin: {hrb} | N_coils={N}")
+    
+            # ===== 4️⃣ Trend Chart
+            fig, ax = plt.subplots(figsize=(14,4))
+            x = np.arange(1, N+1)
+            for col, color, marker in [("TS","#1f77b4","o"), ("YS","#2ca02c","s"), ("EL","#ff7f0e","^")]:
+                ax.plot(x, df_bin[col], marker=marker, label=col, color=color)
+                ax.fill_between(x, df_bin[col].min(), df_bin[col].max(), color=color, alpha=0.1)
+                ng_idx = df_bin.index[df_bin[f"NG_{col}"]].to_list()
+                ax.scatter([x[j] for j in range(N) if df_bin.index[j] in ng_idx],
+                           df_bin.loc[ng_idx, col], color="red", s=50, zorder=5)
+    
+            # Spec lines
+            for val, col in [(TS_LSL, "#1f77b4"), (TS_USL, "#1f77b4"),
+                             (YS_LSL, "#2ca02c"), (YS_USL, "#2ca02c"),
+                             (EL_LSL, "#ff7f0e"), (EL_USL, "#ff7f0e")]:
+                if val != 0:
+                    ax.axhline(val, color=col, linestyle="--", alpha=0.5)
+    
+            ax.set_xlabel("Coil Sequence")
+            ax.set_ylabel("Mechanical Properties (MPa / %)")
+            ax.set_title(f"Trend: TS/YS/EL for HRB {hrb}")
+            ax.grid(True, linestyle="--", alpha=0.5)
+            ax.legend(loc="best")
+            plt.tight_layout()
+            st.pyplot(fig)
+    
+            # Safe key + file name
+            safe_hrb = re.sub(r"[<≥]", "", str(hrb))
+            buf_trend = fig_to_png(fig)
+            st.download_button(
+                label=f"📥 Download Trend HRB {hrb}",
+                data=buf_trend,
+                file_name=f"trend_{safe_hrb}.png",
+                mime="image/png",
+                key=f"trend_{safe_hrb}_{uuid.uuid4()}"  # 100% unique
+            )
+    
+            # ===== 5️⃣ Distribution Chart
+            fig, ax = plt.subplots(figsize=(14,4))
+            for col, color in [("TS","#1f77b4"), ("YS","#2ca02c"), ("EL","#ff7f0e")]:
+                ax.hist(df_bin[col].fillna(0), bins=10, alpha=0.4, label=col, color=color, edgecolor="black")
+            ax.set_title(f"Distribution: TS/YS/EL for HRB {hrb}")
+            ax.set_xlabel("Value")
+            ax.set_ylabel("Count")
+            ax.grid(alpha=0.3, linestyle="--")
+            ax.legend()
+            plt.tight_layout()
+            st.pyplot(fig)
+    
+            buf_dist = fig_to_png(fig)
+            st.download_button(
+                label=f"📥 Download Distribution HRB {hrb}",
+                data=buf_dist,
+                file_name=f"dist_{safe_hrb}.png",
+                mime="image/png",
+                key=f"dist_{safe_hrb}_{uuid.uuid4()}"  # 100% unique
+            )
+    
+            # ===== 6️⃣ Mechanical Properties Table
+            summary_bin = df_bin[["COIL_NO","TS","YS","EL","HRB_bin","NG_TS","NG_YS","NG_EL"]].copy()
+            summary_bin["TS_LSL"], summary_bin["TS_USL"] = TS_LSL, TS_USL
+            summary_bin["YS_LSL"], summary_bin["YS_USL"] = YS_LSL, YS_USL
+            summary_bin["EL_LSL"], summary_bin["EL_USL"] = EL_LSL, EL_USL
+            with st.expander(f"📋 Mechanical Properties Table (HRB {hrb})", expanded=False):
+                st.dataframe(
+                    summary_bin.style.format("{:.1f}", subset=["TS","YS","EL","TS_LSL","TS_USL","YS_LSL","YS_USL","EL_LSL","EL_USL"]),
+                    use_container_width=True
+                )
+    
+            # ===== 7️⃣ Quick Conclusion (Min–Max)
+            conclusion = []
+            for prop, ng_col in [("TS","NG_TS"), ("YS","NG_YS"), ("EL","NG_EL")]:
+                n_ng = df_bin[ng_col].fillna(False).sum()
+                val_min = df_bin[prop].min()
+                val_max = df_bin[prop].max()
+                status = "✅ OK" if n_ng==0 else f"⚠️ {n_ng}/{N} out of spec"
+                conclusion.append(f"{prop}: {status} | {val_min:.1f} – {val_max:.1f}")
+            
+            st.markdown("**📌 Quick Conclusion:** " + " | ".join(conclusion))
+
