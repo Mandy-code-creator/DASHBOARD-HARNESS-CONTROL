@@ -303,60 +303,69 @@ for _, g in valid.iterrows():
         )
     elif view_mode == "🛠 Hardness → TS/YS/EL":
         # 1️⃣ Binning Hardness
-        bins = [0, 56, 58, 60, 62, 100]  # điều chỉnh theo nhu cầu
-        labels = ["<56","56-58","58-60","60-62",">62"]
-        sub["HRB_bin"] = pd.cut(sub["Hardness_LAB"], bins=bins, labels=labels)
+        bins = [0, 56, 58, 60, 62, 100]  
+        labels = ["<56", "56-58", "58-60", "60-62", "≥62"]
+        sub["HRB_bin"] = pd.cut(sub["Hardness_LAB"], bins=bins, labels=labels, right=False)
     
-        # 2️⃣ Lấy giới hạn cơ tính từ sheet
-        sub["TS_LSL"] = sub["Standard TS min"]
-        sub["TS_USL"] = sub["Standard TS max"]
-        sub["YS_LSL"] = sub["Standard YS min"]
-        sub["YS_USL"] = sub["Standard YS max"]
-        sub["EL_LSL"] = sub["Standard EL min"]
-        sub["EL_USL"] = sub["Standard EL max"]
+        # 2️⃣ Lấy giới hạn cơ tính
+        mech_cols = ["Standard TS min", "Standard TS max", 
+                     "Standard YS min", "Standard YS max", 
+                     "Standard EL min", "Standard EL max"]
+        sub = sub.dropna(subset=mech_cols)
     
-        sub = sub.dropna(subset=["TS_LSL","TS_USL","YS_LSL","YS_USL","EL_LSL","EL_USL"])
-    
-        # 3️⃣ Summary min/mean/max
+        # 3️⃣ Summary thống kê
         summary = sub.groupby("HRB_bin").agg(
             N_coils=("COIL_NO","count"),
-            TS_mean=("TS","mean"),
-            TS_min=("TS","min"),
-            TS_max=("TS","max"),
-            YS_mean=("YS","mean"),
-            YS_min=("YS","min"),
-            YS_max=("YS","max"),
-            EL_mean=("EL","mean"),
-            EL_min=("EL","min"),
-            EL_max=("EL","max")
+            TS_mean=("TS","mean"), TS_min=("TS","min"), TS_max=("TS","max"),
+            YS_mean=("YS","mean"), YS_min=("YS","min"), YS_max=("YS","max"),
+            EL_mean=("EL","mean"), EL_min=("EL","min"), EL_max=("EL","max")
         ).reset_index()
-        st.markdown("### 🔹 Mechanical Properties per Hardness Range (Current Distribution)")
-        st.dataframe(summary, use_container_width=True)
     
-        # 4️⃣ Line plot
-        fig, ax = plt.subplots(figsize=(8,4))
+        # 4️⃣ Vẽ biểu đồ lớn
         x = np.arange(len(summary))
+        fig, ax = plt.subplots(figsize=(16,6))  # rộng + cao
     
-        ax.plot(x, summary["TS_mean"], marker="o", color="blue", label="TS Mean")
-        ax.fill_between(x, summary["TS_min"], summary["TS_max"], color="blue", alpha=0.2, label="TS Min-Max")
+        # ---- TS
+        ax.plot(x, summary["TS_mean"], marker="o", color="#1f77b4", linewidth=2, markersize=8, label="TS Mean")
+        ax.fill_between(x, summary["TS_min"], summary["TS_max"], color="#1f77b4", alpha=0.15)
     
-        ax.plot(x, summary["YS_mean"], marker="s", color="green", label="YS Mean")
-        ax.fill_between(x, summary["YS_min"], summary["YS_max"], color="green", alpha=0.2, label="YS Min-Max")
+        # ---- YS
+        ax.plot(x, summary["YS_mean"], marker="s", color="#2ca02c", linewidth=2, markersize=8, label="YS Mean")
+        ax.fill_between(x, summary["YS_min"], summary["YS_max"], color="#2ca02c", alpha=0.15)
     
-        ax.plot(x, summary["EL_mean"], marker="^", color="orange", label="EL Mean")
-        ax.fill_between(x, summary["EL_min"], summary["EL_max"], color="orange", alpha=0.2, label="EL Min-Max")
+        # ---- EL
+        ax.plot(x, summary["EL_mean"], marker="^", color="#ff7f0e", linewidth=2, markersize=8, label="EL Mean (%)")
+        ax.fill_between(x, summary["EL_min"], summary["EL_max"], color="#ff7f0e", alpha=0.15)
     
+        # ---- Annotation trực tiếp trên line
+        for i, row in summary.iterrows():
+            ax.annotate(f"{row['TS_mean']:.1f}", (x[i], row['TS_mean']), xytext=(0,12), textcoords="offset points", ha='center', va='bottom', fontsize=10, fontweight='bold', color="#1f77b4")
+            ax.annotate(f"{row['YS_mean']:.1f}", (x[i], row['YS_mean']), xytext=(0,-18), textcoords="offset points", ha='center', va='top', fontsize=10, fontweight='bold', color="#2ca02c")
+            ax.annotate(f"{row['EL_mean']:.1f}%", (x[i], row['EL_mean']), xytext=(0,20), textcoords="offset points", ha='center', va='bottom', fontsize=10, fontweight='bold', color="#ff7f0e")
+    
+        # ---- Legend ngoài chart
+        ax.legend(loc='upper left', bbox_to_anchor=(1.02,1), fontsize=10)
+    
+        # ---- Trục X và style
         ax.set_xticks(x)
-        ax.set_xticklabels(summary["HRB_bin"])
-        ax.set_xlabel("Hardness (HRB bin)")
-        ax.set_ylabel("Mechanical Properties")
-        ax.set_title("Hardness vs TS/YS/EL Range (Current)")
-        ax.grid(alpha=0.3)
-        ax.legend(loc="best")
+        ax.set_xticklabels(summary["HRB_bin"].astype(str), fontweight='bold', fontsize=12)
+        ax.set_xlabel("Hardness Range (HRB)", fontsize=12, fontweight='bold')
+        ax.set_ylabel("Mechanical Properties (MPa)", fontsize=12, fontweight='bold')
+        ax.set_title("Correlation: Hardness vs TS/YS/EL", fontsize=14, fontweight='bold')
+        ax.grid(True, linestyle='--', alpha=0.5)
+    
         plt.tight_layout()
         st.pyplot(fig)
     
-        # 5️⃣ Download chart
+        # 5️⃣ Bảng collapsible dưới biểu đồ
+        with st.expander("🔹 Mechanical Properties per Hardness Range", expanded=False):
+            st.dataframe(
+                summary.style.format("{:.1f}", subset=summary.columns[2:]),
+                use_container_width=True,
+                height=300  # scroll nếu bảng dài
+            )
+    
+        # 6️⃣ Download chart
         buf = fig_to_png(fig)
         st.download_button(
             label="📥 Download Hardness → TS/YS/EL Chart",
