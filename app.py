@@ -162,10 +162,10 @@ view_mode = st.sidebar.radio(
         "📈 Trend (LAB / LINE)",
         "📊 Distribution (LAB + LINE)",
         "🛠 Hardness → TS/YS/EL",
-        "📊 TS/YS/EL Trend & Distribution"  # <-- THÊM VÀO ĐÂY
+        "📊 TS/YS/EL Trend & Distribution",
+        "🧮 Predict TS/YS/EL from Std Hardness"  # <-- view mới thêm ở đây
     ]
 )
-
 
 # ================================
 # GROUP CONDITION
@@ -199,14 +199,15 @@ for _, g in valid.iterrows():
     specs = ", ".join(sorted(sub["Product_Spec"].unique()))
 
     st.markdown(
-        f"""
+    f"""
 ### 🧱 Quality Group: {g['Quality_Group']}
 **Material:** {g['Material']}  
 **Gauge Range:** {g['Gauge_Range']}  
 **Product Specs:** {specs}  
-**Coils:** {sub['COIL_NO'].nunique()} | **QA:** 🧪 **{qa}**
+**Coils:** {sub['COIL_NO'].nunique()} | **QA:** 🧪 **{qa}**  
+**Hardness Limit (HRB):** {lo:.1f} ~ {hi:.1f}
 """
-    )
+)
 
     # ================================
     # VIEW MODE SWITCH
@@ -493,4 +494,4 @@ for _, g in valid.iterrows():
                     f"**📌 Quick Conclusion:** HRB limit={lsl:.1f}-{usl:.1f} | observed HRB={observed_min:.1f}-{observed_max:.1f} | " +
                     " | ".join(conclusion)
                 )
-
+    
