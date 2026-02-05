@@ -175,7 +175,6 @@ view_mode = st.sidebar.radio(
         "🛠 Hardness → TS/YS/EL",
         "📊 TS/YS/EL Trend & Distribution",
         "🧮 Predict TS/YS/EL (Custom Hardness)",
-        "📊 Hardness → Mechanical Range"
     ]
 )
 
@@ -570,154 +569,108 @@ for _, g in valid.iterrows():
                     " | ".join(conclusion)
                 )
     # ================================
-# ================================
     elif view_mode == "🧮 Predict TS/YS/EL (Custom Hardness)":
-        import uuid
-    
         st.markdown("## 🧮 Predict Mechanical Properties for Custom Hardness")
     
-        # ====== 1️⃣ Tạo UID cố định để giữ giá trị nhập ======
-        if "predict_uid" not in st.session_state:
-            st.session_state.predict_uid = str(uuid.uuid4())
-        uid = st.session_state.predict_uid
-    
-        # ====== 2️⃣ Chọn kiểu dự báo ======
+        # --- Chọn kiểu dự báo ---
         pred_type = st.radio(
             "Select input type for prediction:",
             ["Single Value", "Range"],
-            key=f"predict_type_{uid}"
+            key="predict_type"  # key cố định
         )
     
         if pred_type == "Single Value":
             user_hrb = st.number_input(
                 "Enter desired LINE Hardness (HRB):",
-                min_value=0.0, max_value=120.0, value=90.0, step=0.1,
-                key=f"predict_hrb_single_{uid}"
+                min_value=0.0,
+                max_value=120.0,
+                value=90.0,  # mặc định có thể đổi
+                step=0.1,
+                key="predict_hrb_single"  # key cố định
             )
             hrb_values = [user_hrb]
     
         else:
             hrb_min = st.number_input(
                 "Enter minimum LINE Hardness (HRB):",
-                min_value=0.0, max_value=120.0, value=88.0, step=0.1,
-                key=f"predict_hrb_min_{uid}"
+                min_value=0.0,
+                max_value=120.0,
+                value=88.0,
+                step=0.1,
+                key="predict_hrb_min"  # key cố định
             )
             hrb_max = st.number_input(
                 "Enter maximum LINE Hardness (HRB):",
-                min_value=0.0, max_value=120.0, value=92.0, step=0.1,
-                key=f"predict_hrb_max_{uid}"
+                min_value=0.0,
+                max_value=120.0,
+                value=92.0,
+                step=0.1,
+                key="predict_hrb_max"  # key cố định
             )
             step = st.number_input(
                 "Step for prediction:",
-                min_value=0.1, max_value=10.0, value=1.0, step=0.1,
-                key=f"predict_hrb_step_{uid}"
+                min_value=0.1,
+                max_value=10.0,
+                value=1.0,
+                step=0.1,
+                key="predict_hrb_step"  # key cố định
             )
             hrb_values = list(np.arange(hrb_min, hrb_max + 0.01, step))
     
-        # ====== 3️⃣ Chuẩn bị dữ liệu ======
-        sub_fit = sub.dropna(subset=["Hardness_LINE","TS","YS","EL"]).copy()
+        # --- Chuẩn bị dữ liệu ---
+        sub_fit = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
         N_coils = len(sub_fit)
         if N_coils < 5:
             st.warning(f"⚠️ Not enough data to perform prediction (N={N_coils})")
             st.stop()
     
-        # ====== 4️⃣ Fit linear model TS/YS/EL ======
+        # --- Fit linear model TS/YS/EL ---
         pred_values = {}
-        for prop in ["TS","YS","EL"]:
+        for prop in ["TS", "YS", "EL"]:
             x = sub_fit["Hardness_LINE"].values
             y = sub_fit[prop].values
             a, b = np.polyfit(x, y, 1)
             pred_values[prop] = a * np.array(hrb_values) + b
     
-        # ====== 5️⃣ Vẽ trend + marker dự báo ======
-        fig, ax = plt.subplots(figsize=(14,5))
-        coils = np.arange(1, N_coils+1)
+        # --- Vẽ trend + marker dự báo ---
+        fig, ax = plt.subplots(figsize=(14, 5))
+        coils = np.arange(1, N_coils + 1)
     
-        # Observed
-        for prop, color, marker, unit in [("TS","#1f77b4","o","MPa"),
-                                           ("YS","#2ca02c","s","MPa"),
-                                           ("EL","#ff7f0e","^","%")]:
+        for prop, color, marker, unit in [("TS", "#1f77b4", "o", "MPa"),
+                                           ("YS", "#2ca02c", "s", "MPa"),
+                                           ("EL", "#ff7f0e", "^", "%")]:
             vals = sub_fit[prop].values
             ax.plot(coils, vals, marker=marker, color=color, label=f"{prop} Observed")
     
-        # Predicted
-        for prop, color, unit in [("TS","#1f77b4","MPa"),
-                                  ("YS","#2ca02c","MPa"),
-                                  ("EL","#ff7f0e","%")]:
+            # predicted marker
             pred = pred_values[prop]
             pred_x = [coils[-1] + 1 + i for i in range(len(pred))]
             ax.scatter(pred_x, pred, color="red", s=100, marker="X", label=f"{prop} Predicted ({unit})")
-            # nối cuối quan sát → dự báo
+    
+            # connect last observed to predicted
             for j in range(len(pred)):
-                ax.plot([coils[-1], pred_x[j]], [sub_fit[prop].values[-1], pred[j]],
-                        linestyle=":", color="red", linewidth=2)
+                ax.plot([coils[-1], pred_x[j]], [vals[-1], pred[j]], linestyle=":", color="red", linewidth=2)
     
         ax.set_xlabel("Coil Sequence")
         ax.set_ylabel("Mechanical Properties (TS/YS in MPa, EL in %)")
         ax.set_title("Trend: Observed TS/YS/EL with Predicted Hardness")
         ax.grid(True, linestyle="--", alpha=0.3)
-        ax.legend(loc='center left', bbox_to_anchor=(1.02,0.5))
+        ax.legend(loc='center left', bbox_to_anchor=(1.02, 0.5))
         plt.tight_layout()
         st.pyplot(fig)
     
-        # ====== 6️⃣ Bảng dự báo ======
-        pred_table = pd.DataFrame({"HRB": [round(h,1) for h in hrb_values]})
-        for prop in ["TS","YS","EL"]:
+        # --- Bảng dự báo thu gọn bằng expander ---
+        pred_table = pd.DataFrame({"HRB": [int(round(h)) for h in hrb_values]})
+        for prop in ["TS", "YS", "EL"]:
             pred_table[prop] = pred_values[prop]
     
         with st.expander("📋 Predicted Mechanical Properties (click to expand)", expanded=True):
-            st.dataframe(pred_table.style.format("{:.1f}", subset=["TS","YS","EL"]),
-                         use_container_width=True)
+            st.dataframe(pred_table.style.format("{:.1f}", subset=["TS", "YS", "EL"]), use_container_width=True)
     
-        # ====== 7️⃣ Ghi chú ======
         st.markdown("### 📌 Notes")
         st.markdown(
-            "- Red 'X' markers indicate predicted values for custom hardness.\n"
+            "- Red 'X' markers on trend indicate predicted values for custom hardness.\n"
             "- Dashed lines connect last observed coil to predicted values.\n"
             "- EL unit is **%**, TS/YS units are **MPa**.\n"
             "- Table shows predicted values for selected LINE Hardness range."
         )
-
-    elif view_mode == "📊 Hardness → Mechanical Range":
-        st.markdown("## 📊 Hardness → Mechanical Properties Range")
-    
-        # 1️⃣ Chuẩn bị dữ liệu
-        sub_stats = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
-        if sub_stats.empty:
-            st.info("No data available for Hardness → Mechanical Range")
-            st.stop()
-    
-        # 2️⃣ Tạo bảng thống kê theo Hardness LINE rounded
-        sub_stats["HRB_round"] = sub_stats["Hardness_LINE"].round(0).astype(int)
-    
-        summary_range = (
-            sub_stats.groupby("HRB_round").agg(
-                N_coils=("COIL_NO", "count"),
-                TS_min=("TS", "min"), TS_max=("TS", "max"), TS_mean=("TS","mean"),
-                YS_min=("YS", "min"), YS_max=("YS", "max"), YS_mean=("YS","mean"),
-                EL_min=("EL", "min"), EL_max=("EL", "max"), EL_mean=("EL","mean")
-            )
-            .reset_index()
-            .sort_values("HRB_round")
-        )
-    
-        if summary_range.empty:
-            st.info("No data found for current Hardness values")
-        else:
-            # 3️⃣ Hiển thị bảng gọn
-            st.dataframe(
-                summary_range.style.format({
-                    "TS_min":"{:.1f}", "TS_max":"{:.1f}", "TS_mean":"{:.1f}",
-                    "YS_min":"{:.1f}", "YS_max":"{:.1f}", "YS_mean":"{:.1f}",
-                    "EL_min":"{:.1f}", "EL_max":"{:.1f}", "EL_mean":"{:.1f}"
-                }),
-                use_container_width=True,
-                height=400
-            )
-    
-            # 4️⃣ Thêm note
-            st.markdown(
-                "- HRB values rounded to nearest integer.\n"
-                "- TS/YS in MPa, EL in %.\n"
-                "- N_coils = số lượng coil trong mỗi Hardness."
-            )
