@@ -174,7 +174,8 @@ view_mode = st.sidebar.radio(
         "📊 Distribution (LAB + LINE)",
         "🛠 Hardness → TS/YS/EL",
         "📊 TS/YS/EL Trend & Distribution",
-        "🧮 Predict TS/YS/EL"
+        "🧮 Predict TS/YS/EL (Custom Hardness)",
+        "📊 Hardness → Mechanical Range"
     ]
 )
 
@@ -568,96 +569,144 @@ for _, g in valid.iterrows():
                     f"**📌 Quick Conclusion:** HRB limit={lsl:.1f}-{usl:.1f} | observed HRB={observed_min:.1f}-{observed_max:.1f} | " +
                     " | ".join(conclusion)
                 )
-    elif view_mode == "🧮 Predict TS/YS/EL":
-        
-        # ----- Use LINE hardness as predictor
-        sub_fit = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
+    # ================================
+    elif view_mode == "🧮 Predict TS/YS/EL (Custom Hardness)":
+        import uuid
+    
+        st.markdown("## 🧮 Predict Mechanical Properties for Custom Hardness")
+    
+        # --- Tạo uuid để tránh Duplicate Key ---
+        uid = str(uuid.uuid4())
+    
+        # --- Chọn kiểu dự báo ---
+        pred_type = st.radio(
+            "Select input type for prediction:",
+            ["Single Value", "Range"],
+            key=f"predict_type_{uid}"
+        )
+    
+        if pred_type == "Single Value":
+            user_hrb = st.number_input(
+                "Enter desired LINE Hardness (HRB):",
+                min_value=0.0, max_value=120.0, value=90.0, step=0.1,
+                key=f"predict_hrb_single_{uid}"
+            )
+            hrb_values = [user_hrb]
+    
+        else:
+            hrb_min = st.number_input(
+                "Enter minimum LINE Hardness (HRB):",
+                min_value=0.0, max_value=120.0, value=88.0, step=0.1,
+                key=f"predict_hrb_min_{uid}"
+            )
+            hrb_max = st.number_input(
+                "Enter maximum LINE Hardness (HRB):",
+                min_value=0.0, max_value=120.0, value=92.0, step=0.1,
+                key=f"predict_hrb_max_{uid}"
+            )
+            step = st.number_input(
+                "Step for prediction:",
+                min_value=0.1, max_value=10.0, value=1.0, step=0.1,
+                key=f"predict_hrb_step_{uid}"
+            )
+            hrb_values = list(np.arange(hrb_min, hrb_max + 0.01, step))
+    
+        # --- Chuẩn bị dữ liệu ---
+        sub_fit = sub.dropna(subset=["Hardness_LINE","TS","YS","EL"]).copy()
         N_coils = len(sub_fit)
         if N_coils < 5:
             st.warning(f"⚠️ Not enough data to perform prediction (N={N_coils})")
-            continue
+            st.stop()
     
-        coils = np.arange(1, N_coils + 1)
-    
-        # ----- Linear regression for each property
+        # --- Fit linear model TS/YS/EL ---
         pred_values = {}
-        ci_upper = {}
-        ci_lower = {}
-        for prop in ["TS", "YS", "EL"]:
+        for prop in ["TS","YS","EL"]:
             x = sub_fit["Hardness_LINE"].values
             y = sub_fit[prop].values
+            a,b = np.polyfit(x,y,1)
+            pred_values[prop] = a * np.array(hrb_values) + b
     
-            # Linear regression
-            a, b = np.polyfit(x, y, 1)
-            y_pred = a * x + b
-            pred_values[prop] = y_pred
+        # --- Vẽ trend + marker dự báo ---
+        fig, ax = plt.subplots(figsize=(14,5))
+        coils = np.arange(1, N_coils+1)
     
-            # 95% CI approximation: mean ± 1.96*std(residuals)
-            resid = y - y_pred
-            resid_std = np.std(resid, ddof=1)
-            ci_upper[prop] = y_pred + 1.96 * resid_std
-            ci_lower[prop] = y_pred - 1.96 * resid_std
+        for prop, color, marker, unit in [("TS","#1f77b4","o","MPa"),
+                                           ("YS","#2ca02c","s","MPa"),
+                                           ("EL","#ff7f0e","^","%")]:
+            vals = sub_fit[prop].values
+            ax.plot(coils, vals, marker=marker, color=color, label=f"{prop} Observed")
     
-        # ----- Plot observed vs predicted
-        fig, axes = plt.subplots(2, 2, figsize=(16, 10), gridspec_kw={'height_ratios':[1,1]})
-        ax_ts, ax_ys = axes[0, 0], axes[0, 1]
-        ax_el = axes[1, 0]
-        axes[1, 1].axis('off')  # empty subplot
+            # predicted marker
+            pred = pred_values[prop]
+            pred_x = [coils[-1] + 1 + i for i in range(len(pred))]
+            ax.scatter(pred_x, pred, color="red", s=100, marker="X", label=f"{prop} Predicted ({unit})")
+            # connect last observed to predicted
+            for j in range(len(pred)):
+                ax.plot([coils[-1], pred_x[j]], [vals[-1], pred[j]], linestyle=":", color="red", linewidth=2)
     
-        # TS
-        ax_ts.plot(coils, sub_fit["TS"], linestyle="-", marker="o", color="#003f5c", label="Observed TS")
-        ax_ts.plot(coils, pred_values["TS"], linestyle="--", marker="o", color="#ffa600", label="Predicted TS")
-        ax_ts.fill_between(coils, ci_lower["TS"], ci_upper["TS"], color="#ffa600", alpha=0.2, label="95% CI")
-        ax_ts.set_title("TS: Predicted vs Observed per Coil")
-        ax_ts.set_ylabel("MPa")
-        ax_ts.grid(True, linestyle="--", alpha=0.3)
-        ax_ts.legend()
-    
-        # YS
-        ax_ys.plot(coils, sub_fit["YS"], linestyle="-", marker="s", color="#2f4b7c", label="Observed YS")
-        ax_ys.plot(coils, pred_values["YS"], linestyle="--", marker="s", color="#ffa600", label="Predicted YS")
-        ax_ys.fill_between(coils, ci_lower["YS"], ci_upper["YS"], color="#ffa600", alpha=0.2, label="95% CI")
-        ax_ys.set_title("YS: Predicted vs Observed per Coil")
-        ax_ys.set_ylabel("MPa")
-        ax_ys.grid(True, linestyle="--", alpha=0.3)
-        ax_ys.legend()
-    
-        # EL
-        ax_el.plot(coils, sub_fit["EL"], linestyle="-", marker="^", color="#665191", label="Observed EL")
-        ax_el.plot(coils, pred_values["EL"], linestyle="--", marker="^", color="#ffa600", label="Predicted EL")
-        ax_el.fill_between(coils, ci_lower["EL"], ci_upper["EL"], color="#ffa600", alpha=0.2, label="95% CI")
-        ax_el.set_title("EL: Predicted vs Observed per Coil")
-        ax_el.set_xlabel("Coil Sequence")
-        ax_el.set_ylabel("%")
-        ax_el.grid(True, linestyle="--", alpha=0.3)
-        ax_el.legend()
-    
+        ax.set_xlabel("Coil Sequence")
+        ax.set_ylabel("Mechanical Properties (TS/YS in MPa, EL in %)")
+        ax.set_title("Trend: Observed TS/YS/EL with Predicted Hardness")
+        ax.grid(True, linestyle="--", alpha=0.3)
+        ax.legend(loc='center left', bbox_to_anchor=(1.02,0.5))
         plt.tight_layout()
-        fig.suptitle("Predicted vs Observed Mechanical Properties based on LINE Hardness", fontsize=14, fontweight="bold", y=1.02)
         st.pyplot(fig)
     
-        # ----- Automatic conclusion
-        conclusion = []
-        for prop in ["TS", "YS", "EL"]:
-            observed = sub_fit[prop].values
-            predicted = pred_values[prop]
-            upper = ci_upper[prop]
-            lower = ci_lower[prop]
+        # --- Bảng dự báo thu gọn bằng expander ---
+        pred_table = pd.DataFrame({"HRB": [int(round(h)) for h in hrb_values]})
+        for prop in ["TS","YS","EL"]:
+            pred_table[prop] = pred_values[prop]
     
-            n_outside = np.sum((observed < lower) | (observed > upper))
-            bias = observed.mean() - predicted.mean()
-            ci_width = np.mean(upper - lower)
+        with st.expander("📋 Predicted Mechanical Properties (click to expand)", expanded=True):
+            st.dataframe(pred_table.style.format("{:.1f}", subset=["TS","YS","EL"]), use_container_width=True)
     
-            if n_outside == 0:
-                status = "✅ All observed values within 95% CI"
-            else:
-                status = f"⚠️ {n_outside}/{N_coils} coils outside 95% CI"
+        st.markdown("### 📌 Notes")
+        st.markdown(
+            "- Red 'X' markers on trend indicate predicted values for custom hardness.\n"
+            "- Dashed lines connect last observed coil to predicted values.\n"
+            "- EL unit is **%**, TS/YS units are **MPa**.\n"
+            "- Table shows predicted values for selected LINE Hardness range."
+        )
+    elif view_mode == "📊 Hardness → Mechanical Range":
+        st.markdown("## 📊 Hardness → Mechanical Properties Range")
     
-            conclusion.append(
-                f"**{prop}:** Observed mean={observed.mean():.1f}, Predicted mean={predicted.mean():.1f}, "
-                f"Avg CI width={ci_width:.1f} | Bias={bias:.1f} | {status}"
+        # 1️⃣ Chuẩn bị dữ liệu
+        sub_stats = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
+        if sub_stats.empty:
+            st.info("No data available for Hardness → Mechanical Range")
+            st.stop()
+    
+        # 2️⃣ Tạo bảng thống kê theo Hardness LINE rounded
+        sub_stats["HRB_round"] = sub_stats["Hardness_LINE"].round(0).astype(int)
+    
+        summary_range = (
+            sub_stats.groupby("HRB_round").agg(
+                N_coils=("COIL_NO", "count"),
+                TS_min=("TS", "min"), TS_max=("TS", "max"), TS_mean=("TS","mean"),
+                YS_min=("YS", "min"), YS_max=("YS", "max"), YS_mean=("YS","mean"),
+                EL_min=("EL", "min"), EL_max=("EL", "max"), EL_mean=("EL","mean")
+            )
+            .reset_index()
+            .sort_values("HRB_round")
+        )
+    
+        if summary_range.empty:
+            st.info("No data found for current Hardness values")
+        else:
+            # 3️⃣ Hiển thị bảng gọn
+            st.dataframe(
+                summary_range.style.format({
+                    "TS_min":"{:.1f}", "TS_max":"{:.1f}", "TS_mean":"{:.1f}",
+                    "YS_min":"{:.1f}", "YS_max":"{:.1f}", "YS_mean":"{:.1f}",
+                    "EL_min":"{:.1f}", "EL_max":"{:.1f}", "EL_mean":"{:.1f}"
+                }),
+                use_container_width=True,
+                height=400
             )
     
-        st.markdown("### 📌 Prediction Summary")
-        for line in conclusion:
-            st.markdown(line)
+            # 4️⃣ Thêm note
+            st.markdown(
+                "- HRB values rounded to nearest integer.\n"
+                "- TS/YS in MPa, EL in %.\n"
+                "- N_coils = số lượng coil trong mỗi Hardness."
+            )
