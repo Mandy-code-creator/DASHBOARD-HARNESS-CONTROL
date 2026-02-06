@@ -1067,46 +1067,50 @@ for _, g in valid.iterrows():
 # ========================================================
 # ========================================================
 # ========================================================
-    # VIEW MODE: 3-PROPERTIES SEQUENTIAL CHART (ENGLISH VERSION)
+    # VIEW MODE: 3-PROPERTIES SEQUENTIAL CHART (ULTRA CLEAN)
     # ========================================================
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
         st.markdown(f"#### 🚀 Mechanical Properties: Sequential Path & AI Forecast")
         
         # 1. Data Preparation
+        # Filtering and sorting data by production sequence
         train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
         train_df = train_df.sort_values(by="COIL_NO")
         
         if len(train_df) < 5:
             st.warning("⚠️ At least 5 historical coils are required to build the forecast model.")
         else:
-            # 2. Input Section
+            # 2. Target Input Section
             mean_h = float(train_df["Hardness_LINE"].mean())
-            input_key = f"final_v11_en_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
+            input_key = f"v12_pro_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
             
             c_in, _ = st.columns([1, 2])
             with c_in:
                 target_h = st.number_input(f"Target Hardness (HRB):", value=round(mean_h, 1), step=0.1, key=input_key)
 
-            # 3. AI Prediction logic
+            # 3. AI Prediction Logic
+            # Calculating predicted TS, YS, and EL based on Target Hardness
             X_train = train_df[["Hardness_LINE"]].values
             preds = {}
+            from sklearn.linear_model import LinearRegression
             for col in ["TS", "YS", "EL"]:
                 model = LinearRegression().fit(X_train, train_df[col].values)
                 preds[col] = model.predict([[target_h]])[0]
 
-            # 4. Chart Initialization
+            # 4. Professional Visualization
             from plotly.subplots import make_subplots
             import plotly.graph_objects as go
 
+            # Dual-Y axis setup for MPa vs %
             fig = make_subplots(specs=[[{"secondary_y": True}]])
-            colors = {"TS": "#004BA0", "YS": "#1B5E20", "EL": "#B71C1C"} 
+            colors = {"TS": "#0D47A1", "YS": "#1B5E20", "EL": "#B71C1C"} 
             indices = list(range(len(train_df)))
             next_idx = len(train_df)
 
             for col in ["TS", "YS", "EL"]:
                 is_secondary = True if col == "EL" else False
                 
-                # A. Historical Data
+                # A. Historical Trend (Dashed)
                 fig.add_trace(go.Scatter(
                     x=indices, y=train_df[col],
                     mode='lines+markers', name=f"Actual {col}",
@@ -1115,17 +1119,17 @@ for _, g in valid.iterrows():
                     hovertemplate=f"Actual {col}: %{{y:.1f}}<extra></extra>"
                 ), secondary_y=is_secondary)
 
-                # B. Prediction Jump (Bold Line)
+                # B. Prediction Path (Ultra Bold Line)
                 fig.add_trace(go.Scatter(
                     x=[indices[-1], next_idx],
                     y=[train_df[col].iloc[-1], preds[col]],
                     mode='lines',
-                    line=dict(color=colors[col], width=6),
+                    line=dict(color=colors[col], width=7),
                     hoverinfo='skip',
                     showlegend=False
                 ), secondary_y=is_secondary)
 
-                # C. Forecast Target (Diamond Marker)
+                # C. Target Marker (Diamond)
                 fig.add_trace(go.Scatter(
                     x=[next_idx], y=[preds[col]],
                     mode='markers+text',
@@ -1136,24 +1140,24 @@ for _, g in valid.iterrows():
                     hovertemplate=f"<b>TARGET FORECAST</b><br>{col}: %{{y:.1f}}<extra></extra>"
                 ), secondary_y=is_secondary)
 
-            # 5. Professional Layout Configuration
+            # 5. Layout Configuration
             fig.update_layout(
                 title_text="<b>MECHANICAL PROPERTIES EVOLUTION & AI PREDICTION</b>",
                 height=650, template="plotly_white", hovermode="x unified",
                 legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="center", x=0.5)
             )
 
-            fig.update_xaxes(title_text="Production Sequence (Coils)", gridcolor="#F0F0F0")
-            fig.update_yaxes(title_text="<b>Strength (MPa)</b>", secondary_y=False, gridcolor="#F0F0F0")
+            fig.update_xaxes(title_text="Production Sequence (Coils)", gridcolor="#F5F5F5")
+            fig.update_yaxes(title_text="<b>Strength (MPa)</b>", secondary_y=False, gridcolor="#F5F5F5")
             fig.update_yaxes(title_text="<b>Elongation (%)</b>", secondary_y=True, showgrid=False)
 
-            # Highlight Forecast Zone
-            fig.add_vrect(x0=indices[-1], x1=next_idx, fillcolor="#BDBDBD", opacity=0.2, layer="below", line_width=0)
-            fig.add_annotation(x=next_idx, y=1.02, yref="paper", text="FORECAST", showarrow=False, font=dict(color="gray", size=12))
+            # Forecast Zone Highlight
+            fig.add_vrect(x0=indices[-1], x1=next_idx, fillcolor="#E0E0E0", opacity=0.3, layer="below", line_width=0)
+            fig.add_annotation(x=next_idx, y=1.02, yref="paper", text="FORECAST ZONE", showarrow=False, font=dict(color="gray"))
 
             st.plotly_chart(fig, use_container_width=True)
 
-            # Metrics Table
+            # Metric Summary
             c1, c2, c3 = st.columns(3)
             c1.metric("Predicted TS", f"{preds['TS']:.1f} MPa")
             c2.metric("Predicted YS", f"{preds['YS']:.1f} MPa")
