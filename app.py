@@ -176,6 +176,7 @@ view_mode = st.sidebar.radio(
         "⚙️ Mech Props Analysis",                 # <--- Tên mới cho TS/YS/EL Trend
         "🔍 Lookup: Hardness Range → Actual Mech Props", # <--- Tính năng tra cứu
         "🎯 Find Target Hardness (Reverse Lookup)",
+        "🧮 Predict TS/YS/EL from Std Hardness",
     ]
 )
 
@@ -1060,3 +1061,62 @@ for _, g in valid.iterrows():
             1. Try widening the **Max YS** or **Max TS** slightly.
             2. Check the 'Debug Info' above to see if data is missing.
             """)
+# --- TÍNH NĂNG MỚI: PREDICTION ---
+    elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
+        st.markdown("#### 🤖 AI Prediction (Linear Regression)")
+        
+        # Chuẩn bị dữ liệu train
+        train_df = g_sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
+        
+        if len(train_df) < 30:
+            st.warning(f"⚠️ Not enough data points ({len(train_df)}) for reliable prediction. Need at least 30.")
+        else:
+            # --- [SỬA] TÍNH TRUNG BÌNH ĐỂ LÀM MẶC ĐỊNH ---
+            mean_hardness = float(train_df["Hardness_LINE"].mean())
+
+            # Input Slider
+            target_h = st.slider(f"Target Hardness (HRB) {uuid.uuid4()}", 
+                                 min_value=float(train_df["Hardness_LINE"].min()), 
+                                 max_value=float(train_df["Hardness_LINE"].max()), 
+                                 value=mean_hardness) # <--- Đã thay 60.0 bằng mean_hardness
+            
+            # Xây dựng Model cho từng chỉ số
+            X = train_df[["Hardness_LINE"]].values
+            cols_pred = st.columns(3)
+            
+            metrics = [("YS", "Yield Strength"), ("TS", "Tensile Strength"), ("EL", "Elongation")]
+            
+            for idx, (col_name, label) in enumerate(metrics):
+                y = train_df[col_name].values
+                
+                # Train
+                model = LinearRegression()
+                model.fit(X, y)
+                y_pred_all = model.predict(X)
+                r2 = r2_score(y, y_pred_all)
+                
+                # Predict Input
+                val_pred = model.predict([[target_h]])[0]
+                
+                # Tính khoảng sai số (RMSE)
+                rmse = np.sqrt(((y - y_pred_all) ** 2).mean())
+                
+                with cols_pred[idx]:
+                    st.metric(label=f"Predicted {col_name}", value=f"{val_pred:.1f}", delta=f"± {rmse:.1f}")
+                    
+                    # Đánh giá độ tin cậy
+                    if r2 > 0.5:
+                        st.success(f"🎯 High Confidence (R²={r2:.2f})")
+                    elif r2 > 0.3:
+                        st.warning(f"⚠️ Medium Confidence (R²={r2:.2f})")
+                    else:
+                        st.error(f"❌ Low Correlation (R²={r2:.2f})")
+                        
+                    # Vẽ biểu đồ tương quan nhỏ
+                    fig, ax = plt.subplots(figsize=(4,3))
+                    ax.scatter(train_df["Hardness_LINE"], train_df[col_name], alpha=0.5, s=10)
+                    ax.plot(train_df["Hardness_LINE"], y_pred_all, color="red", linewidth=1)
+                    ax.scatter([target_h], [val_pred], color="green", s=100, zorder=5, label="You are here")
+                    ax.set_xlabel("Hardness"); ax.set_ylabel(col_name)
+                    ax.legend()
+                    st.pyplot(fig)
