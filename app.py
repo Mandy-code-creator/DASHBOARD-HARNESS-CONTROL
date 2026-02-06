@@ -1064,58 +1064,97 @@ for _, g in valid.iterrows():
             1. Try widening the **Max YS** or **Max TS** slightly.
             2. Check the 'Debug Info' above to see if data is missing.
             """)
-# --- TÍNH NĂNG MỚI: PREDICTION ---
+# ========================================================
+# ========================================================
+# ========================================================
+    # VIEW MODE: 3-PROPERTIES SEQUENTIAL CHART (ENGLISH VERSION)
+    # ========================================================
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
-        st.markdown("#### 🤖 AI Prediction (Linear Regression)")
+        st.markdown(f"#### 🚀 Mechanical Properties: Sequential Path & AI Forecast")
         
-        # [SỬA LỖI] Dùng biến 'sub' thay vì 'g_sub'
-        train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
+        # 1. Data Preparation
+        train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
+        train_df = train_df.sort_values(by="COIL_NO")
         
-        if len(train_df) < 30:
-            st.warning(f"⚠️ Not enough data points ({len(train_df)}) for reliable prediction. Need at least 30.")
+        if len(train_df) < 5:
+            st.warning("⚠️ At least 5 historical coils are required to build the forecast model.")
         else:
-            # [SỬA LỖI] Tính trung bình để thanh kéo tự động nhận diện
-            mean_hardness = float(train_df["Hardness_LINE"].mean())
+            # 2. Input Section
+            mean_h = float(train_df["Hardness_LINE"].mean())
+            input_key = f"final_v11_en_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
+            
+            c_in, _ = st.columns([1, 2])
+            with c_in:
+                target_h = st.number_input(f"Target Hardness (HRB):", value=round(mean_h, 1), step=0.1, key=input_key)
 
-            # Input Slider
-            target_h = st.slider(f"Target Hardness (HRB) {uuid.uuid4()}", 
-                                 min_value=float(train_df["Hardness_LINE"].min()), 
-                                 max_value=float(train_df["Hardness_LINE"].max()), 
-                                 value=mean_hardness) # Đặt mặc định là trung bình
-            
-            # Xây dựng Model
-            X = train_df[["Hardness_LINE"]].values
-            cols_pred = st.columns(3)
-            
-            metrics = [("YS", "Yield Strength"), ("TS", "Tensile Strength"), ("EL", "Elongation")]
-            
-            for idx, (col_name, label) in enumerate(metrics):
-                y = train_df[col_name].values
+            # 3. AI Prediction logic
+            X_train = train_df[["Hardness_LINE"]].values
+            preds = {}
+            for col in ["TS", "YS", "EL"]:
+                model = LinearRegression().fit(X_train, train_df[col].values)
+                preds[col] = model.predict([[target_h]])[0]
+
+            # 4. Chart Initialization
+            from plotly.subplots import make_subplots
+            import plotly.graph_objects as go
+
+            fig = make_subplots(specs=[[{"secondary_y": True}]])
+            colors = {"TS": "#004BA0", "YS": "#1B5E20", "EL": "#B71C1C"} 
+            indices = list(range(len(train_df)))
+            next_idx = len(train_df)
+
+            for col in ["TS", "YS", "EL"]:
+                is_secondary = True if col == "EL" else False
                 
-                # Train
-                model = LinearRegression()
-                model.fit(X, y)
-                y_pred_all = model.predict(X)
-                r2 = r2_score(y, y_pred_all)
-                
-                # Predict
-                val_pred = model.predict([[target_h]])[0]
-                rmse = np.sqrt(((y - y_pred_all) ** 2).mean())
-                
-                with cols_pred[idx]:
-                    st.metric(label=f"Predicted {col_name}", value=f"{val_pred:.1f}", delta=f"± {rmse:.1f}")
-                    
-                    if r2 > 0.5:
-                        st.success(f"🎯 High Confidence (R²={r2:.2f})")
-                    elif r2 > 0.3:
-                        st.warning(f"⚠️ Medium Confidence (R²={r2:.2f})")
-                    else:
-                        st.error(f"❌ Low Correlation (R²={r2:.2f})")
-                        
-                    # Chart
-                    fig, ax = plt.subplots(figsize=(4,3))
-                    ax.scatter(train_df["Hardness_LINE"], train_df[col_name], alpha=0.5, s=10)
-                    ax.plot(train_df["Hardness_LINE"], y_pred_all, color="red", linewidth=1)
-                    ax.scatter([target_h], [val_pred], color="green", s=100, zorder=5)
-                    ax.set_xlabel("Hardness"); ax.set_ylabel(col_name)
-                    st.pyplot(fig)
+                # A. Historical Data
+                fig.add_trace(go.Scatter(
+                    x=indices, y=train_df[col],
+                    mode='lines+markers', name=f"Actual {col}",
+                    line=dict(color=colors[col], width=1.5, dash='dot'),
+                    marker=dict(size=4, opacity=0.4),
+                    hovertemplate=f"Actual {col}: %{{y:.1f}}<extra></extra>"
+                ), secondary_y=is_secondary)
+
+                # B. Prediction Jump (Bold Line)
+                fig.add_trace(go.Scatter(
+                    x=[indices[-1], next_idx],
+                    y=[train_df[col].iloc[-1], preds[col]],
+                    mode='lines',
+                    line=dict(color=colors[col], width=6),
+                    hoverinfo='skip',
+                    showlegend=False
+                ), secondary_y=is_secondary)
+
+                # C. Forecast Target (Diamond Marker)
+                fig.add_trace(go.Scatter(
+                    x=[next_idx], y=[preds[col]],
+                    mode='markers+text',
+                    name=f"Forecast {col}",
+                    text=[f"<b>{preds[col]:.1f}</b>"],
+                    textposition="top center",
+                    marker=dict(color=colors[col], size=18, symbol='diamond', line=dict(color='white', width=2)),
+                    hovertemplate=f"<b>TARGET FORECAST</b><br>{col}: %{{y:.1f}}<extra></extra>"
+                ), secondary_y=is_secondary)
+
+            # 5. Professional Layout Configuration
+            fig.update_layout(
+                title_text="<b>MECHANICAL PROPERTIES EVOLUTION & AI PREDICTION</b>",
+                height=650, template="plotly_white", hovermode="x unified",
+                legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="center", x=0.5)
+            )
+
+            fig.update_xaxes(title_text="Production Sequence (Coils)", gridcolor="#F0F0F0")
+            fig.update_yaxes(title_text="<b>Strength (MPa)</b>", secondary_y=False, gridcolor="#F0F0F0")
+            fig.update_yaxes(title_text="<b>Elongation (%)</b>", secondary_y=True, showgrid=False)
+
+            # Highlight Forecast Zone
+            fig.add_vrect(x0=indices[-1], x1=next_idx, fillcolor="#BDBDBD", opacity=0.2, layer="below", line_width=0)
+            fig.add_annotation(x=next_idx, y=1.02, yref="paper", text="FORECAST", showarrow=False, font=dict(color="gray", size=12))
+
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Metrics Table
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Predicted TS", f"{preds['TS']:.1f} MPa")
+            c2.metric("Predicted YS", f"{preds['YS']:.1f} MPa")
+            c3.metric("Predicted EL", f"{preds['EL']:.1f} %")
