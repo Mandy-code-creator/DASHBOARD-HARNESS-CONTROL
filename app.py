@@ -574,7 +574,7 @@ for _, g in valid.iterrows():
         st.markdown("## 🧮 Predict Mechanical Properties for Custom Hardness")
     
         # ===============================
-        # 1️⃣ PREPARE DATA
+        # Prepare data
         # ===============================
         sub_fit = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
         N = len(sub_fit)
@@ -587,11 +587,13 @@ for _, g in valid.iterrows():
         hrb_max_data = float(sub_fit["Hardness_LINE"].max())
     
         # ===============================
-        # 2️⃣ INPUT SECTION
+        # INPUT AREA (NO FORM – SAFE)
         # ===============================
         pred_type = st.radio(
             "Select input type for prediction:",
-            ["Single Value", "Range"]
+            ["Single Value", "Range"],
+            index=0,
+            key="pred_type_custom"
         )
     
         if pred_type == "Single Value":
@@ -599,36 +601,39 @@ for _, g in valid.iterrows():
                 st.number_input(
                     "Enter desired LINE Hardness (HRB):",
                     value=round((hrb_min_data + hrb_max_data) / 2, 1),
-                    step=0.1
+                    step=0.1,
+                    key="hrb_single"
                 )
             ]
         else:
             hrb_min = st.number_input(
                 "Minimum LINE Hardness (HRB):",
                 value=round(hrb_min_data, 1),
-                step=0.1
+                step=0.1,
+                key="hrb_min"
             )
             hrb_max = st.number_input(
                 "Maximum LINE Hardness (HRB):",
                 value=round(hrb_max_data, 1),
-                step=0.1
+                step=0.1,
+                key="hrb_max"
             )
             step = st.number_input(
                 "Step:",
                 value=1.0,
-                step=0.1
+                step=0.1,
+                key="hrb_step"
             )
-            hrb_values = list(np.arange(hrb_min, hrb_max + 0.01, step))
+    
+            hrb_values = list(np.arange(hrb_min, hrb_max + 0.001, step))
     
         # ===============================
-        # 3️⃣ PREDICT BUTTON (CHỈ 1 CHỖ)
+        # PREDICT BUTTON (ĐÚNG CHỖ)
         # ===============================
         if st.button("🔮 Predict", use_container_width=True):
     
-            # ===============================
-            # 4️⃣ FIT & PREDICT
-            # ===============================
             pred_values = {}
+    
             for prop in ["TS", "YS", "EL"]:
                 a, b = np.polyfit(
                     sub_fit["Hardness_LINE"].values,
@@ -638,7 +643,7 @@ for _, g in valid.iterrows():
                 pred_values[prop] = a * np.array(hrb_values) + b
     
             # ===============================
-            # 5️⃣ PLOT
+            # Plot
             # ===============================
             fig, ax = plt.subplots(figsize=(14, 5))
             coils = np.arange(1, N + 1)
@@ -676,7 +681,7 @@ for _, g in valid.iterrows():
             st.pyplot(fig)
     
             # ===============================
-            # 6️⃣ TABLE
+            # Table
             # ===============================
             pred_table = pd.DataFrame({"HRB": hrb_values})
             for prop in ["TS", "YS", "EL"]:
