@@ -186,6 +186,7 @@ if valid.empty:
     st.stop()
 
 # ==============================================================================
+# ==============================================================================
 #  🚀 GLOBAL SUMMARY DASHBOARD (FINAL: STATS + LIMITS + SIMULATION)
 # ==============================================================================
 if view_mode == "🚀 Global Summary Dashboard":
@@ -283,12 +284,11 @@ if view_mode == "🚀 Global Summary Dashboard":
             cols = [c for c in cols if c in df_stats.columns]
             df_stats = df_stats[cols]
 
-            # Format & Style
+            # Format & Style (FIX: Xóa height=600)
             st.dataframe(
                 df_stats.style.format("{:.1f}", subset=[c for c in df_stats.columns if "(Avg)" in c or "(Min)" in c or "(Max)" in c])
                               .background_gradient(subset=["HRB (Avg)"], cmap="Blues"),
-                use_container_width=True,
-                height=600
+                use_container_width=True
             )
         else:
             st.warning("Insufficient data for statistics.")
@@ -376,6 +376,7 @@ if view_mode == "🚀 Global Summary Dashboard":
                 if "⚠️" in val: return 'color: orange'
                 return 'color: green'
 
+            # Format & Style (FIX: Xóa height=600)
             st.dataframe(
                 df_pred.style.format({
                     "Pred TS": "{:.0f}", "Pred YS": "{:.0f}", "Pred EL": "{:.1f}",
@@ -383,7 +384,7 @@ if view_mode == "🚀 Global Summary Dashboard":
                 })
                 .applymap(highlight_r2, subset=["Model Trust (R2)"])
                 .applymap(highlight_status, subset=["Status"]),
-                use_container_width=True, height=600
+                use_container_width=True
             )
             st.caption("* Model Trust (R2): Closer to 1.0 is better. \n* Status: Checks if Target is within History and Standard Limits.")
         else:
