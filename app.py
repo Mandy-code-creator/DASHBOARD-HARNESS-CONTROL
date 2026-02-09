@@ -1,6 +1,6 @@
 # ================================
 # FULL STREAMLIT APP – FINAL COMPLETE VERSION
-# INTEGRATED GLOBAL DASHBOARD + SMART LOGIC + COLD ROLLING RULES
+# INTEGRATED GLOBAL DASHBOARD + SMART LOGIC + COLD ROLLING RULES + VISUAL FIXES
 # ================================
 
 import streamlit as st
@@ -89,9 +89,16 @@ def split_std(x):
 
 df[["Std_Min","Std_Max"]] = df["Std_Text"].apply(lambda x: pd.Series(split_std(x)))
 
-# 4. Force Numeric
-for c in ["Hardness_LAB","Hardness_LINE","YS","TS","EL","Order_Gauge"]:
-    df[c] = pd.to_numeric(df[c], errors="coerce")
+# 4. Force Numeric (Include Spec Columns to avoid missing lines)
+numeric_cols = [
+    "Hardness_LAB", "Hardness_LINE", "YS", "TS", "EL", "Order_Gauge",
+    "Standard TS min", "Standard TS max",
+    "Standard YS min", "Standard YS max",
+    "Standard EL min", "Standard EL max"
+]
+for c in numeric_cols:
+    if c in df.columns:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
 
 # 5. Quality Group Merge
 df["Quality_Group"] = df["Quality_Code"].replace({
@@ -141,7 +148,7 @@ def apply_company_rules(row):
         
         # Rule 3: Nhóm A108 General
         elif mat in ["A108", "A108G", "A108R", "A108MR", "A1081B"]:
-            return 58.0, 62.0, 52.0, 65.0, "Rule A108-Gen (Cold)"
+            return 58.0, 62.0, 52.0, 65.0, "Rule A108G (Cold)"
 
     # Nếu không thỏa mãn rule nào -> Trả về giá trị gốc của Excel
     return std_min, std_max, lab_min, lab_max, rule_name
@@ -231,8 +238,6 @@ if valid.empty:
     st.stop()
 
 # ==============================================================================
-#  🚀 GLOBAL SUMMARY DASHBOARD (FINAL: STATS + LIMITS + SIMULATION)
-# ==============================================================================
 #  🚀 GLOBAL SUMMARY DASHBOARD (FINAL: ADDED RULE & LAB COLUMNS)
 # ==============================================================================
 if view_mode == "🚀 Global Summary Dashboard":
@@ -289,7 +294,6 @@ if view_mode == "🚀 Global Summary Dashboard":
             rule_name = sub_grp['Rule_Name'].iloc[0]
             l_min = sub_grp['Lab_Min'].iloc[0]
             l_max = sub_grp['Lab_Max'].iloc[0]
-            # Nếu có Lab Limit (>0) thì hiển thị, không thì gạch ngang
             lim_lab = f"{l_min:.0f}~{l_max:.0f}" if (l_min > 0 and l_max > 0) else "-"
 
             stats_rows.append({
@@ -297,8 +301,8 @@ if view_mode == "🚀 Global Summary Dashboard":
                 "Material": g["Material"],
                 "Gauge": g["Gauge_Range"],
                 "Specs": specs_str,
-                "Rule Applied": rule_name,   # <--- Cột Mới
-                "Lab Limit": lim_lab,        # <--- Cột Mới
+                "Rule Applied": rule_name,   
+                "Lab Limit": lim_lab,        
                 "N": len(sub_grp),
                 
                 # Hardness Stats
@@ -329,7 +333,7 @@ if view_mode == "🚀 Global Summary Dashboard":
         if stats_rows:
             df_stats = pd.DataFrame(stats_rows)
             
-            # Reorder columns (Đưa Rule và Lab Limit lên đầu cho dễ nhìn)
+            # Reorder columns
             cols = [
                 "Quality", "Material", "Gauge", "Rule Applied", "Lab Limit", "HRB Limit", 
                 "HRB (Avg)", "HRB (Min)", "HRB (Max)", "N",
@@ -337,18 +341,16 @@ if view_mode == "🚀 Global Summary Dashboard":
                 "YS Limit", "YS (Avg)", "YS (Min)", "YS (Max)",
                 "EL Limit", "EL (Avg)", "EL (Min)", "EL (Max)"
             ]
-            # Chỉ lấy các cột tồn tại
             cols = [c for c in cols if c in df_stats.columns]
             df_stats = df_stats[cols]
 
-            # Highlight các dòng áp dụng Rule đặc biệt (Cold)
+            # Highlight Rule
             def highlight_rule(s):
                 return ['background-color: #fffbe6' if "Rule" in str(s["Rule Applied"]) else '' for _ in s]
 
-            # Format & Style
             st.dataframe(
                 df_stats.style.format("{:.1f}", subset=[c for c in df_stats.columns if "(Avg)" in c or "(Min)" in c or "(Max)" in c])
-                              .apply(highlight_rule, axis=1), # Tô màu vàng nhạt cho dòng có Rule
+                              .apply(highlight_rule, axis=1),
                 use_container_width=True
             )
         else:
@@ -375,12 +377,10 @@ if view_mode == "🚀 Global Summary Dashboard":
 
             if len(sub_grp) < 10: continue 
 
-            # 1. Get Historical Range
+            # 2. Get Standard Control Limits (NEW)
+            std_lo = sub_grp["Limit_Min"].min()
+            std_hi = sub_grp["Limit_Max"].max()
             h_min, h_max = sub_grp["Hardness_LINE"].min(), sub_grp["Hardness_LINE"].max()
-            
-            # 2. Get Standard Control Limits (Hardness)
-            std_lo = sub_grp["Limit_Min"].min() # Dùng Limit mới
-            std_hi = sub_grp["Limit_Max"].max() # Dùng Limit mới
             
             if pd.isna(std_lo): std_lo = 0
             if pd.isna(std_hi): std_hi = 0
@@ -450,10 +450,10 @@ if view_mode == "🚀 Global Summary Dashboard":
             st.warning("Insufficient data for prediction.")
 
     st.stop()
+
 # ==============================================================================
 # MAIN LOOP (DETAILS)
 # ==============================================================================
-# Sử dụng enumerate để có thể sử dụng biến i cho key duy nhất nếu cần
 for i, (_, g) in enumerate(valid.iterrows()):
     sub = df[
         (df["Rolling_Type"] == g["Rolling_Type"]) &
@@ -463,8 +463,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
         (df["Material"] == g["Material"])
     ].sort_values("COIL_NO")
 
-    # --- [BƯỚC 2: CẬP NHẬT MAIN LOOP] ---
-    # Lấy giới hạn từ cột Rule mới tạo
+    # --- [CẬP NHẬT] LẤY LIMIT MỚI ---
     lo, hi = sub.iloc[0][["Limit_Min", "Limit_Max"]] 
     rule_used = sub.iloc[0]["Rule_Name"]
     l_lo, l_hi = sub.iloc[0][["Lab_Min", "Lab_Max"]]
@@ -475,16 +474,17 @@ for i, (_, g) in enumerate(valid.iterrows()):
     qa = "FAIL" if sub["NG"].any() else "PASS"
     specs = ", ".join(sorted(sub["Product_Spec"].unique()))
 
-    # Chỉ hiển thị Header nếu không phải Global view
     if view_mode != "🚀 Global Summary Dashboard":
         st.markdown(f"### 🧱 {g['Quality_Group']} | {g['Material']} | {g['Gauge_Range']}")
         st.markdown(f"**Specs:** {specs} | **Coils:** {sub['COIL_NO'].nunique()} | **Limit:** {lo:.1f}~{hi:.1f}")
         
-        # Hiển thị Rule đang áp dụng
-        if "Rule" in rule_used:
-            st.success(f"✅ Applied: **{rule_used}** (Control: {lo:.0f}-{hi:.0f} | Lab: {l_lo:.0f}-{l_hi:.0f})")
-        else:
-            st.caption(f"ℹ️ Applied: **Standard Excel Spec**")
+        # --- [CẬP NHẬT] ẨN RULE Ở VIEW MECH PROPS ---
+        if view_mode != "⚙️ Mech Props Analysis":
+            if "Rule" in rule_used:
+                # Dùng dấu "-" thay vì "~" để tránh lỗi strikethrough
+                st.success(f"✅ Applied: **{rule_used}** (Control: {lo:.0f} - {hi:.0f} | Lab: {l_lo:.0f} - {l_hi:.0f})")
+            else:
+                st.caption(f"ℹ️ Applied: **Standard Excel Spec**")
 
     # ================================
     # 1. DATA INSPECTION
@@ -510,10 +510,15 @@ for i, (_, g) in enumerate(valid.iterrows()):
             ax.plot(x, sub["Hardness_LAB"], marker="o", linewidth=2, label="LAB", alpha=0.5)
             ax.plot(x, sub["Hardness_LINE"], marker="s", linewidth=2, label="LINE", alpha=0.9) 
             
-            # Vẽ giới hạn (SỬ DỤNG LO/HI ĐÃ CẬP NHẬT THEO RULE)
-            ax.axhline(lo, linestyle="--", linewidth=2, color="red", label=f"LSL={lo}")
-            ax.axhline(hi, linestyle="--", linewidth=2, color="red", label=f"USL={hi}")
+            # Vẽ Control Limits (Màu Đỏ)
+            ax.axhline(lo, linestyle="--", linewidth=2, color="red", label=f"Control LSL={lo}")
+            ax.axhline(hi, linestyle="--", linewidth=2, color="red", label=f"Control USL={hi}")
             
+            # Vẽ Lab Limits (Màu Tím)
+            if l_lo > 0 and l_hi > 0:
+                ax.axhline(l_lo, linestyle="-.", linewidth=1.5, color="purple", label=f"Lab LSL={l_lo}", alpha=0.7)
+                ax.axhline(l_hi, linestyle="-.", linewidth=1.5, color="purple", label=f"Lab USL={l_hi}", alpha=0.7)
+
             ax.set_title("Hardness Trend by Coil Sequence", weight="bold")
             ax.set_xlabel("Coil Sequence"); ax.set_ylabel("Hardness (HRB)")
             ax.grid(alpha=0.25, linestyle="--")
@@ -521,7 +526,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
             plt.tight_layout()
             st.pyplot(fig)
             
-            # Nút download
             buf = fig_to_png(fig)
             st.download_button("📥 Download Trend Chart", data=buf, file_name=f"trend_{g['Material']}.png", mime="image/png", key=f"dl_tr_{uuid.uuid4()}")
 
@@ -533,101 +537,86 @@ for i, (_, g) in enumerate(valid.iterrows()):
             if len(line) < 5:
                 st.warning("⚠️ Not enough LINE data (N < 5) to calculate SPC.")
             else:
-                # 1. Hàm tính toán SPC Helper
                 def calc_spc_metrics(data, lsl, usl):
                     if len(data) < 2: return None
                     mean = data.mean()
                     std = data.std(ddof=1)
                     if std == 0: return None 
                     
-                    # Cp: Process Potential
                     cp = (usl - lsl) / (6 * std)
-                    
-                    # Ca: Accuracy (%)
                     mid = (usl + lsl) / 2
                     tol = (usl - lsl)
                     ca = ((mean - mid) / (tol / 2)) * 100
-                    
-                    # Cpk: Process Capability
                     cpu = (usl - mean) / (3 * std)
                     cpl = (mean - lsl) / (3 * std)
                     cpk = min(cpu, cpl)
-                    
                     return mean, std, cp, ca, cpk
 
-                # CHỈ TÍNH TOÁN SPC CHO LINE (Để hiển thị bảng)
                 spc_line = calc_spc_metrics(line, lo, hi)
 
-                # 2. Chuẩn bị vẽ biểu đồ
                 mean_line, std_line = line.mean(), line.std(ddof=1)
+                if not lab.empty: mean_lab, std_lab = lab.mean(), lab.std(ddof=1)
+                else: mean_lab, std_lab = 0, 0
                 
-                # Tính toán cho LAB (chỉ để vẽ đường curve tham khảo)
-                if not lab.empty:
-                    mean_lab, std_lab = lab.mean(), lab.std(ddof=1)
-                else:
-                    mean_lab, std_lab = 0, 0
-                
-                # Auto scale trục X
-                data_min = min(line.min(), lab.min()) if not lab.empty else line.min()
-                data_max = max(line.max(), lab.max()) if not lab.empty else line.max()
-                x_min = min(data_min, lo) - 2
-                x_max = max(data_max, hi) + 2
+                # Auto scale trục X (Bao gồm cả Lab Limit)
+                vals = [line.min(), line.max(), lo, hi]
+                if l_lo > 0: vals.extend([l_lo, l_hi])
+                if not lab.empty: vals.extend([lab.min(), lab.max()])
+                x_min = min(vals) - 2; x_max = max(vals) + 2
                 
                 bins = np.linspace(x_min, x_max, 30)
-                xs = np.linspace(x_min, x_max, 400) # Trục X cho đường cong chuẩn
+                
+                # Extended Range for Curve (± 5 Sigma)
+                range_curve = max(5 * std_line, (x_max - x_min)/2)
+                xs = np.linspace(mean_line - range_curve, mean_line + range_curve, 400)
                 
                 fig, ax = plt.subplots(figsize=(10, 5))
                 
-                # Histogram
                 ax.hist(line, bins=bins, density=True, alpha=0.6, color="#ff7f0e", edgecolor="white", label="LINE Hist")
                 if not lab.empty:
                     ax.hist(lab, bins=bins, density=True, alpha=0.3, color="#1f77b4", edgecolor="None", label="LAB Hist")
                 
-                # --- VẼ NORMAL CURVE (LINE - Nét liền đậm) ---
                 if std_line > 0:
                     ys_line = (1/(std_line*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_line)/std_line)**2)
                     ax.plot(xs, ys_line, linewidth=2.5, color="#b25e00", label="LINE Fit")
 
-                # --- VẼ NORMAL CURVE (LAB - Nét đứt màu xanh) ---
                 if not lab.empty and std_lab > 0:
                     ys_lab = (1/(std_lab*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_lab)/std_lab)**2)
                     ax.plot(xs, ys_lab, linewidth=2, linestyle="--", color="#1f77b4", label="LAB Fit")
                 
-                # Limits (SỬ DỤNG LO/HI ĐÃ CẬP NHẬT)
-                ax.axvline(lo, linestyle="--", linewidth=2, color="red", label="LSL")
-                ax.axvline(hi, linestyle="--", linewidth=2, color="red", label="USL")
+                # Limits (Màu Đỏ)
+                ax.axvline(lo, linestyle="--", linewidth=2, color="red", label="Control LSL")
+                ax.axvline(hi, linestyle="--", linewidth=2, color="red", label="Control USL")
                 
+                # Lab Limits (Màu Tím)
+                if l_lo > 0 and l_hi > 0:
+                    ax.axvline(l_lo, linestyle="-.", linewidth=2, color="purple", label="Lab LSL")
+                    ax.axvline(l_hi, linestyle="-.", linewidth=2, color="purple", label="Lab USL")
+                
+                # Set X Limits để curve đi xuyên qua
+                ax.set_xlim(x_min, x_max)
+
                 ax.set_title(f"Hardness Distribution (LINE vs LAB)", weight="bold")
                 ax.legend()
                 ax.grid(alpha=0.3)
                 st.pyplot(fig)
 
-                # 3. Hiển thị bảng chỉ số SPC (CHỈ LINE)
                 st.markdown("#### 📐 SPC Capability Indices (LINE ONLY)")
                 
                 if spc_line:
                     mean_val, std_val, cp_val, ca_val, cpk_val = spc_line
-                    
                     eval_msg = "Excellent" if cpk_val >= 1.33 else ("Good" if cpk_val >= 1.0 else "Poor")
                     color_code = "green" if cpk_val >= 1.33 else ("orange" if cpk_val >= 1.0 else "red")
 
                     df_spc = pd.DataFrame([{
-                        "N (Coils)": len(line),
-                        "Mean": mean_val, "Std Dev": std_val,
+                        "N": len(line), "Mean": mean_val, "Std": std_val,
                         "Cp": cp_val, "Ca (%)": ca_val, "Cpk": cpk_val,
                         "Rating": eval_msg
                     }])
 
-                    # Format bảng: TẤT CẢ LÀ 2 SỐ THẬP PHÂN
                     st.dataframe(
-                        df_spc.style.format({
-                            "Mean": "{:.2f}", 
-                            "Std Dev": "{:.2f}",          
-                            "Cp": "{:.2f}", 
-                            "Ca (%)": "{:.2f}%", 
-                            "Cpk": "{:.2f}"
-                        }).applymap(lambda v: f'color: {color_code}; font-weight: bold', subset=['Rating']),
-                        use_container_width=True, 
+                        df_spc.style.format("{:.2f}", subset=["Mean", "Std", "Cp", "Ca (%)", "Cpk"])
+                        .applymap(lambda v: f'color: {color_code}; font-weight: bold', subset=['Rating']),
                         hide_index=True
                     )
 
@@ -637,7 +626,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
     elif view_mode == "🔗 Correlation: Hardness vs Mech Props":
         st.markdown("### 🔗 Correlation: Hardness vs Mechanical Properties")
         
-        # 1. Prepare Data
         sub_corr = sub.dropna(subset=["Hardness_LAB","TS","YS","EL"])
         bins = [0,56,58,60,62,65,70,75,80,85,88,92,97,100]
         labels = ["<56","56-58","58-60","60-62","62-65","65-70","70-75","75-80","80-85","85-88","88-92","92-97","≥97"]
@@ -655,43 +643,31 @@ for i, (_, g) in enumerate(valid.iterrows()):
         summary = summary[summary["N_coils"]>0]
 
         if not summary.empty:
-            # 2. Setup Plot
             x = np.arange(len(summary))
             fig, ax = plt.subplots(figsize=(15,6))
             
-            # Helper Function to Draw Lines
             def plot_prop(x, y, ymin, ymax, c, lbl, m):
                 ax.plot(x, y, marker=m, color=c, label=lbl, lw=2)
                 ax.fill_between(x, ymin, ymax, color=c, alpha=0.1)
 
-            # Draw 3 Lines
             plot_prop(x, summary["TS_mean"], summary["TS_min"], summary["TS_max"], "#1f77b4", "TS", "o")
             plot_prop(x, summary["YS_mean"], summary["YS_min"], summary["YS_max"], "#2ca02c", "YS", "s")
             plot_prop(x, summary["EL_mean"], summary["EL_min"], summary["EL_max"], "#ff7f0e", "EL", "^")
 
-            # 3. Annotations (Gắn nhãn số lên biểu đồ)
             for j, row in enumerate(summary.itertuples()):
-                # TS Label (Blue)
                 ax.annotate(f"{row.TS_mean:.0f}", (x[j], row.TS_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="#1f77b4")
-                
-                # YS Label (Green)
                 ax.annotate(f"{row.YS_mean:.0f}", (x[j], row.YS_mean), xytext=(0,-15), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="#2ca02c")
                 
-                # EL Label (Orange/Red)
                 el_spec = row.Std_EL_min
                 is_fail = (el_spec > 0) and (row.EL_mean < el_spec)
                 lbl = f"{row.EL_mean:.1f}%" + ("❌" if is_fail else "")
                 clr = "red" if is_fail else "#ff7f0e"
                 ax.annotate(lbl, (x[j], row.EL_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, color=clr, fontweight=("bold" if is_fail else "normal"))
 
-            # Settings
             ax.set_xticks(x); ax.set_xticklabels(summary["HRB_bin"])
             ax.set_title("Hardness vs Mechanical Properties (Mean & Range)"); ax.grid(True, ls="--", alpha=0.5); ax.legend()
-            
-            # 4. RENDER CHART
             st.pyplot(fig)
             
-            # 5. Quick Conclusion Table
             st.markdown("#### 📌 Quick Conclusion per Hardness Bin (Table View)")
             conclusion_data = []
 
@@ -716,22 +692,90 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 st.dataframe(pd.DataFrame(conclusion_data), use_container_width=True, hide_index=True)
 
     # ================================
-    # 4. MECH PROPS ANALYSIS
+    # 4. MECH PROPS ANALYSIS (UPDATED: WITH LIMITS & STATS & LONG CURVE)
     # ================================
     elif view_mode == "⚙️ Mech Props Analysis":
+        st.markdown("### ⚙️ Mechanical Properties Analysis (Distribution vs Specs)")
+        
         sub_mech = sub.dropna(subset=["TS","YS","EL"])
-        if not sub_mech.empty:
-            fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-            for j, (col, c) in enumerate([("TS","#1f77b4"),("YS","#2ca02c"),("EL","#ff7f0e")]):
+        
+        if sub_mech.empty:
+            st.warning("⚠️ No Mechanical Property data available for this group.")
+        else:
+            props_config = [
+                {"col": "TS", "name": "Tensile Strength (TS)", "color": "#1f77b4", "min_c": "Standard TS min", "max_c": "Standard TS max"},
+                {"col": "YS", "name": "Yield Strength (YS)", "color": "#2ca02c", "min_c": "Standard YS min", "max_c": "Standard YS max"},
+                {"col": "EL", "name": "Elongation (EL)", "color": "#ff7f0e", "min_c": "Standard EL min", "max_c": "Standard EL max"}
+            ]
+
+            fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+            stats_data = []
+
+            for j, cfg in enumerate(props_config):
+                col = cfg["col"]
                 data = sub_mech[col]
                 mean, std = data.mean(), data.std()
-                axes[j].hist(data, bins=15, color=c, alpha=0.5, density=True)
+                
+                # Get Specs
+                spec_min = sub_mech[cfg["min_c"]].max() if cfg["min_c"] in sub_mech else 0
+                spec_max = sub_mech[cfg["max_c"]].min() if cfg["max_c"] in sub_mech else 0
+                if pd.isna(spec_min): spec_min = 0
+                if pd.isna(spec_max): spec_max = 0
+                
+                # Calculate Process Limits (3 Sigma)
+                proc_min = mean - 3 * std
+                proc_max = mean + 3 * std
+
+                # Vẽ Histogram
+                axes[j].hist(data, bins=20, color=cfg["color"], alpha=0.5, density=True, label="Actual Dist")
+                
+                # Vẽ đường Normal Curve dài (± 5 Sigma)
                 if std > 0:
-                    x_p = np.linspace(mean-4*std, mean+4*std, 100)
+                    x_p = np.linspace(mean - 5 * std, mean + 5 * std, 200)
                     y_p = (1/(std*np.sqrt(2*np.pi))) * np.exp(-0.5*((x_p-mean)/std)**2)
-                    axes[j].plot(x_p, y_p, color=c, lw=2)
-                axes[j].set_title(f"{col} Distribution")
+                    axes[j].plot(x_p, y_p, color=cfg["color"], lw=2, label="Normal Fit")
+
+                    # Set X-Limits wide enough
+                    view_min = min(data.min(), spec_min if spec_min > 0 else data.min(), proc_min)
+                    view_max = max(data.max(), spec_max if spec_max < 9000 else data.max(), proc_max)
+                    margin = (view_max - view_min) * 0.4
+                    axes[j].set_xlim(view_min - margin, view_max + margin)
+
+                # 1. Vẽ đường SPEC (Màu Đỏ - Nét đứt)
+                if spec_min > 0:
+                    axes[j].axvline(spec_min, color="red", linestyle="--", linewidth=2, label=f"Spec Min {spec_min:.0f}")
+                if spec_max > 0 and spec_max < 9000:
+                    axes[j].axvline(spec_max, color="red", linestyle="--", linewidth=2, label=f"Spec Max {spec_max:.0f}")
+
+                # 2. Vẽ đường PROCESS CONTROL (Màu Xanh - Nét chấm) -> Đảm bảo luôn có vạch
+                axes[j].axvline(proc_min, color="blue", linestyle=":", linewidth=2, label=f"-3σ ({proc_min:.1f})")
+                axes[j].axvline(proc_max, color="blue", linestyle=":", linewidth=2, label=f"+3σ ({proc_max:.1f})")
+
+                axes[j].set_title(f"{cfg['name']}\n(Mean={mean:.1f}, Std={std:.1f})", fontweight="bold")
+                axes[j].legend(loc="upper right", fontsize="small")
+                axes[j].grid(alpha=0.3, linestyle="--")
+
+                stats_data.append({
+                    "Property": col,
+                    "Limit (Spec)": f"{spec_min:.0f} ~ {spec_max:.0f}" if (spec_max > 0 and spec_max < 9000) else f"≥ {spec_min:.0f}",
+                    "Actual (Range)": f"{data.min():.1f} ~ {data.max():.1f}",
+                    "Mean": mean,
+                    "Std Dev": std,
+                    "Pass Rate": f"{(data >= spec_min).mean() * 100:.1f}%" if spec_min > 0 else "100%"
+                })
+
             st.pyplot(fig)
+            
+            st.markdown("#### 📊 Statistics Summary & Spec Check")
+            df_stat = pd.DataFrame(stats_data)
+            st.dataframe(
+                df_stat.style.format({
+                    "Mean": "{:.1f}", 
+                    "Std Dev": "{:.1f}"
+                }), 
+                use_container_width=True, 
+                hide_index=True
+            )
 
     # ================================
     # 5. LOOKUP
@@ -747,12 +791,11 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.dataframe(filt[["TS","YS","EL"]].describe().T)
 
     # ================================
-    # 6. REVERSE LOOKUP (SMART LIMITS RESTORED)
+    # 6. REVERSE LOOKUP
     # ================================
     elif view_mode == "🎯 Find Target Hardness (Reverse Lookup)":
         st.subheader("🎯 Target Hardness Calculator (Smart Limits)")
         
-        # --- SMART LIMIT FUNCTION (RESTORED) ---
         def calculate_smart_limits(name, col_val, col_spec_min, col_spec_max, step=5.0):
             try:
                 series_val = pd.to_numeric(sub[col_val], errors='coerce')
@@ -790,12 +833,10 @@ for i, (_, g) in enumerate(valid.iterrows()):
             except:
                 return 0.0, 0.0
 
-        # Calc Limits
         d_ys_min, d_ys_max = calculate_smart_limits('YS', 'YS', 'Standard YS min', 'Standard YS max', 5.0)
         d_ts_min, d_ts_max = calculate_smart_limits('TS', 'TS', 'Standard TS min', 'Standard TS max', 5.0)
         d_el_min, d_el_max = calculate_smart_limits('EL', 'EL', 'Standard EL min', 'Standard EL max', 1.0)
 
-        # Input UI
         c1, c2, c3 = st.columns(3)
         with c1: 
             r_ys_min = st.number_input("Min YS", value=d_ys_min, step=5.0, key=f"rys1_{uuid.uuid4()}")
@@ -858,7 +899,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
             c3.metric("Pred EL", f"{preds['EL']:.1f}")
 
     # ================================
-    # 8. CONTROL LIMIT CALCULATOR (FINAL: SYNCED WITH GLOBAL RULES)
+# ================================
+    # 8. CONTROL LIMIT CALCULATOR (FINAL: COLOR FIXED + LAB DATA)
     # ================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
         
@@ -866,97 +908,78 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
         # Lấy dữ liệu
         data = sub["Hardness_LINE"].dropna()
+        data_lab = sub["Hardness_LAB"].dropna() # Lấy thêm dữ liệu Lab để vẽ đối chiếu
         
         if len(data) < 10:
             st.warning(f"⚠️ {g['Material']}: 數據不足 (N={len(data)})")
         else:
-            # --- 1. CẤU HÌNH THAM SỐ (Settings) ---
             unique_key_sigma = f"ctrl_sigma_{i}_{g['Material']}"
             unique_key_iqr = f"ctrl_iqr_{i}_{g['Material']}"
 
             with st.expander("⚙️ 設定參數 (Settings)", expanded=False):
                 col_par1, col_par2 = st.columns(2)
                 with col_par1:
-                    sigma_n = st.number_input(
-                        "1. Sigma Multiplier (K)", 
-                        min_value=1.0, max_value=6.0, value=3.0, step=0.5,
-                        help="Dùng cho tất cả các phương pháp (Std, IQR, I-MR).",
-                        key=unique_key_sigma 
-                    )
+                    sigma_n = st.number_input("1. Sigma Multiplier (K)", 1.0, 6.0, 3.0, 0.5, key=unique_key_sigma)
                 with col_par2:
-                    iqr_k = st.number_input(
-                        "2. IQR Sensitivity", 
-                        min_value=0.5, max_value=3.0, value=0.7, step=0.1,
-                        help="Dùng riêng cho phương pháp IQR.",
-                        key=unique_key_iqr
-                    )
+                    iqr_k = st.number_input("2. IQR Sensitivity", 0.5, 3.0, 0.7, 0.1, key=unique_key_iqr)
 
-            # --- 2. TÍNH TOÁN (4 PHƯƠNG PHÁP) ---
-            
-            # --- [BƯỚC 3: CẬP NHẬT] Spec (Method 0) - Lấy từ cột Limit_Min/Max ---
+            # --- TÍNH TOÁN LIMIT (Dựa trên LINE) ---
             spec_min = sub["Limit_Min"].max() 
             spec_max = sub["Limit_Max"].min()
-            
-            # Xử lý NaN
             if pd.isna(spec_min): spec_min = 0
             if pd.isna(spec_max): spec_max = 0
             display_max = spec_max if (spec_max > 0 and spec_max < 9000) else 0
 
             mu = data.mean()
 
-            # Method 1: Standard N-Sigma
+            # Method 1: Standard
             std_dev = data.std()
             m1_min, m1_max = mu - sigma_n*std_dev, mu + sigma_n*std_dev
             
-            # Method 2: IQR Robust
-            Q1 = data.quantile(0.25)
-            Q3 = data.quantile(0.75)
-            IQR = Q3 - Q1
+            # Method 2: IQR
+            Q1 = data.quantile(0.25); Q3 = data.quantile(0.75); IQR = Q3 - Q1
             clean_data = data[~((data < (Q1 - iqr_k * IQR)) | (data > (Q3 + iqr_k * IQR)))]
             if clean_data.empty: clean_data = data
             mu_clean, sigma_clean = clean_data.mean(), clean_data.std()
             m2_min, m2_max = mu_clean - sigma_n*sigma_clean, mu_clean + sigma_n*sigma_clean
 
-            # Method 3: Smart Hybrid
+            # Method 3: Hybrid
             m3_min = max(m2_min, spec_min)
             m3_max = min(m2_max, spec_max) if (spec_max > 0 and spec_max < 9000) else m2_max
             if m3_min >= m3_max: m3_min, m3_max = m2_min, m2_max
 
-            # Method 4: I-MR (Individual Moving Range) - SPC Standard
+            # Method 4: I-MR
             mrs = np.abs(np.diff(data))
             mr_bar = np.mean(mrs)
             sigma_imr = mr_bar / 1.128
-            m4_min = mu - sigma_n * sigma_imr
-            m4_max = mu + sigma_n * sigma_imr
+            m4_min, m4_max = mu - sigma_n * sigma_imr, mu + sigma_n * sigma_imr
 
-            # --- 3. HIỂN THỊ BẢNG & BIỂU ĐỒ ---
+            # --- VẼ BIỂU ĐỒ (CẬP NHẬT MÀU SẮC) ---
             col_chart, col_table = st.columns([2, 1])
             
             with col_chart:
                 fig, ax = plt.subplots(figsize=(10, 5))
-                ax.hist(data, bins=30, density=True, alpha=0.3, color="gray", label="Raw Data")
+                
+                # 1. Vẽ LINE (Màu Xanh Dương)
+                ax.hist(data, bins=30, density=True, alpha=0.6, color="#1f77b4", label="LINE (Production)")
+                
+                # 2. Vẽ LAB (Màu Cam - Vẽ chồng lên để so sánh)
+                if not data_lab.empty:
+                    ax.hist(data_lab, bins=30, density=True, alpha=0.4, color="#ff7f0e", label="LAB (Reference)")
                 
                 # Vẽ các đường giới hạn
-                # M1: Red Dotted
-                ax.axvline(m1_min, c="red", ls=":", alpha=0.4, label="_nolegend_")
-                ax.axvline(m1_max, c="red", ls=":", alpha=0.4, label="M1: Standard")
+                ax.axvline(m1_min, c="red", ls=":", alpha=0.4); ax.axvline(m1_max, c="red", ls=":", alpha=0.4, label="M1: Standard")
+                ax.axvline(m2_min, c="blue", ls="--", alpha=0.5); ax.axvline(m2_max, c="blue", ls="--", alpha=0.5, label="M2: IQR")
+                ax.axvline(m4_min, c="purple", ls="-.", lw=2); ax.axvline(m4_max, c="purple", ls="-.", lw=2, label="M4: I-MR (SPC)")
                 
-                # M2: Blue Dashed
-                ax.axvline(m2_min, c="blue", ls="--", alpha=0.5, label="_nolegend_")
-                ax.axvline(m2_max, c="blue", ls="--", alpha=0.5, label="M2: IQR")
-
-                # M4 (I-MR): Purple Dash-Dot
-                ax.axvline(m4_min, c="purple", ls="-.", lw=2, label="_nolegend_")
-                ax.axvline(m4_max, c="purple", ls="-.", lw=2, label="M4: I-MR (SPC)")
-                
-                # M3: Green Area
+                # Vùng tối ưu (Hybrid)
                 ax.axvspan(m3_min, m3_max, color="green", alpha=0.15, label="M3: Hybrid Zone")
                 
-                # Spec (Company Rule)
+                # Spec Khách hàng
                 if spec_min > 0: ax.axvline(spec_min, c="black", lw=2)
                 if display_max > 0: ax.axvline(display_max, c="black", lw=2)
 
-                ax.set_title(f"Limits Comparison (σ={sigma_n})", fontsize=10, fontweight="bold")
+                ax.set_title(f"Control Limits Analysis (Line vs Lab)", fontsize=10, fontweight="bold")
                 ax.legend(loc="upper right", fontsize="small")
                 st.pyplot(fig)
 
