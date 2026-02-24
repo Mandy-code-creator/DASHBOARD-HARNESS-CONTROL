@@ -904,11 +904,11 @@ for i, (_, g) in enumerate(valid.iterrows()):
             c2.metric("Yield Strength (YS)", f"{int(round(preds['YS']))} MPa", f"{get_delta(preds['YS'], last_ys)} vs Last")
             c3.metric("Elongation (EL)", f"{round(preds['EL'], 1)} %", f"{get_delta(preds['EL'], last_el)} vs Last")
     # ================================
-   # 8. CONTROL LIMIT CALCULATOR
+  # 8. CONTROL LIMIT CALCULATOR
     # ================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
         
-        # --- THÊM CODE: KHỞI TẠO DANH SÁCH TỔNG HỢP Ở VÒNG LẶP ĐẦU TIÊN ---
+        # --- KHỞI TẠO DANH SÁCH TỔNG HỢP Ở VÒNG LẶP ĐẦU TIÊN ---
         if i == 0:
             all_groups_summary = []
 
@@ -916,17 +916,27 @@ for i, (_, g) in enumerate(valid.iterrows()):
         data = sub["Hardness_LINE"].dropna()
         data_lab = sub["Hardness_LAB"].dropna()
         
-        if len(data) < 10: st.warning(f"⚠️ {g['Material']}: 數據不足 (N={len(data)})")
+        if len(data) < 10: 
+            st.warning(f"⚠️ {g['Material']}: 數據不足 (N={len(data)})")
         else:
             with st.expander("⚙️ 設定參數 (Settings)", expanded=False):
                 c1, c2 = st.columns(2)
                 sigma_n = c1.number_input("1. Sigma Multiplier (K)", 1.0, 6.0, 3.0, 0.5, key=f"sig_{i}")
                 iqr_k = c2.number_input("2. IQR Sensitivity", 0.5, 3.0, 0.7, 0.1, key=f"iqr_{i}")
 
+            # --- LẤY GIỚI HẠN CONTROL VÀ LAB ---
             spec_min = sub["Limit_Min"].max(); spec_max = sub["Limit_Max"].min()
+            lab_min = sub["Lab_Min"].max(); lab_max = sub["Lab_Max"].min()
+            rule_name = sub["Rule_Name"].iloc[0] # Lấy tên Rule đang áp dụng
+            
             if pd.isna(spec_min): spec_min = 0
             if pd.isna(spec_max): spec_max = 0
+            if pd.isna(lab_min): lab_min = 0
+            if pd.isna(lab_max): lab_max = 0
+            
             display_max = spec_max if (spec_max > 0 and spec_max < 9000) else 0
+            display_lab_max = lab_max if (lab_max > 0 and lab_max < 9000) else 0
+            
             mu = data.mean(); std_dev = data.std()
             
             m1_min, m1_max = mu - sigma_n*std_dev, mu + sigma_n*std_dev
@@ -935,21 +945,31 @@ for i, (_, g) in enumerate(valid.iterrows()):
             if clean_data.empty: clean_data = data
             mu_clean, sigma_clean = clean_data.mean(), clean_data.std()
             m2_min, m2_max = mu_clean - sigma_n*sigma_clean, mu_clean + sigma_n*sigma_clean
+            
             m3_min = max(m2_min, spec_min)
             m3_max = min(m2_max, spec_max) if (spec_max > 0 and spec_max < 9000) else m2_max
             if m3_min >= m3_max: m3_min, m3_max = m2_min, m2_max
+            
             mrs = np.abs(np.diff(data)); mr_bar = np.mean(mrs); sigma_imr = mr_bar / 1.128
             m4_min, m4_max = mu - sigma_n * sigma_imr, mu + sigma_n * sigma_imr
 
-            # --- THÊM CODE: LƯU DỮ LIỆU CỦA VÒNG LẶP HIỆN TẠI VÀO DANH SÁCH ---
+            # --- TẠO CHUỖI HIỂN THỊ CHO CỘT SPEC ---
+            if display_lab_max > 0:
+                spec_str = f"Ctrl: {spec_min:.0f}~{display_max:.0f} | Lab: {lab_min:.0f}~{display_lab_max:.0f}"
+            else:
+                spec_str = f"{spec_min:.0f} ~ {display_max:.0f}"
+
+            # --- LƯU DỮ LIỆU CỦA VÒNG LẶP HIỆN TẠI VÀO DANH SÁCH ---
             all_groups_summary.append({
                 "Quality": g["Quality_Group"],
                 "Material": g["Material"],
                 "Gauge": g["Gauge_Range"],
                 "N": len(data),
-                "Current Spec": f"{spec_min:.1f} ~ {display_max:.1f}",
+                "Rule Applied": rule_name, # <--- HIỂN THỊ TÊN RULE
+                "Current Spec": spec_str,  # <--- HIỂN THỊ ĐẦY ĐỦ CONTROL & LAB
                 "M1: Standard": f"{m1_min:.1f} ~ {m1_max:.1f}",
                 "M2: IQR (Robust)": f"{m2_min:.1f} ~ {m2_max:.1f}",
+                "M3: Smart Hybrid": f"{m3_min:.1f} ~ {m3_max:.1f}", 
                 "M4: I-MR (Optimal)": f"{m4_min:.1f} ~ {m4_max:.1f}",
                 "Status": "✅ Stable" if (display_max > 0 and m4_max <= display_max) else "⚠️ Narrow Spec"
             })
@@ -970,7 +990,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
             with col_table:
                 comp_data = [
-                    {"Method": "0. Spec (Rule)", "Min": spec_min, "Max": display_max, "Range": display_max-spec_min if display_max>0 else 0, "Note": "Target"},
+                    {"Method": "0. Spec (Rule)", "Min": spec_min, "Max": display_max, "Range": display_max-spec_min if display_max>0 else 0, "Note": rule_name},
                     {"Method": "1. Standard", "Min": m1_min, "Max": m1_max, "Range": m1_max-m1_min, "Note": "Basic Stats"},
                     {"Method": "2. IQR Robust", "Min": m2_min, "Max": m2_max, "Range": m2_max-m2_min, "Note": "Filtered"},
                     {"Method": "3. Smart Hybrid", "Min": m3_min, "Max": m3_max, "Range": m3_max-m3_min, "Note": "Configurable"},
@@ -979,19 +999,19 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 st.dataframe(pd.DataFrame(comp_data).style.format("{:.1f}", subset=["Min", "Max", "Range"]), use_container_width=True, hide_index=True)
                 st.info("**Color Guide:**\n* 🔵 LINE (Blue) vs 🟠 LAB (Orange)\n* **M4 (I-MR)** is best for detecting process drift.")
 
-        # --- THÊM CODE: HIỂN THỊ BẢNG TỔNG HỢP Ở VÒNG LẶP CUỐI CÙNG ---
+        # --- HIỂN THỊ BẢNG TỔNG HỢP Ở VÒNG LẶP CUỐI CÙNG ---
         if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
             st.markdown("---")
             st.markdown(f"## 📊 Summary of Control Limits for {qgroup}")
             
             df_total = pd.DataFrame(all_groups_summary)
             
-            # Hàm tô màu Status (Đỏ/Xanh)
+            # Hàm tô màu Status
             def style_status(val):
                 color = 'red' if 'Narrow' in val else 'green'
                 return f'color: {color}; font-weight: bold'
 
-            # Áp dụng màu cho Status và Highlight cột phương pháp tối ưu (M4)
+            # Áp dụng màu cho Status và Highlight cột M4
             styled_df = (
                 df_total.style
                 .applymap(style_status, subset=['Status'])
