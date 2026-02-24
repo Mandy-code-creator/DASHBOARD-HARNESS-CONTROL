@@ -936,7 +936,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             mrs = np.abs(np.diff(data)); mr_bar = np.mean(mrs); sigma_imr = mr_bar / 1.128
             m4_min, m4_max = mu - sigma_n * sigma_imr, mu + sigma_n * sigma_imr
 
-                        col_chart, col_table = st.columns([2, 1])
+            col_chart, col_table = st.columns([2, 1])
             with col_chart:
                 fig, ax = plt.subplots(figsize=(10, 5))
                 ax.hist(data, bins=30, density=True, alpha=0.6, color="#1f77b4", label="LINE (Production)")
