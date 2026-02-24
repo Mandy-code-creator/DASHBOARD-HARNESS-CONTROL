@@ -666,9 +666,9 @@ for i, (_, g) in enumerate(valid.iterrows()):
     # ================================
     elif view_mode == "⚙️ Mech Props Analysis":
         
-        # --- 1. KHỞI TẠO DANH SÁCH TỔNG HỢP Ở VÒNG LẶP ĐẦU TIÊN ---
+        # --- 1. KHỞI TẠO 3 DANH SÁCH TỔNG HỢP RIÊNG BIỆT ---
         if i == 0:
-            mech_props_summary = []
+            ts_summary, ys_summary, el_summary = [], [], []
 
         st.markdown(f"### ⚙️ Mechanical Properties Analysis: {g['Material']} | {g['Gauge_Range']}")
         sub_mech = sub.dropna(subset=["TS","YS","EL"])
@@ -682,7 +682,10 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 {"col": "EL", "name": "Elongation (EL)", "color": "#ff7f0e", "min_c": "Standard EL min", "max_c": "Standard EL max"}
             ]
             fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-            stats_data = []
+            
+            # Xử lý trích xuất Specs từ cột Product_Spec
+            col_spec = "Product_Spec"
+            specs_str = f"Specs: {', '.join(str(x) for x in sub[col_spec].dropna().unique())}" if col_spec in sub.columns else "Specs: N/A"
 
             for j, cfg in enumerate(props_config):
                 col = cfg["col"]; data = sub_mech[col]; mean, std = data.mean(), data.std()
@@ -690,77 +693,62 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 spec_max = sub_mech[cfg["max_c"]].min() if cfg["max_c"] in sub_mech else 0
                 if pd.isna(spec_min): spec_min = 0
                 if pd.isna(spec_max): spec_max = 0
-                proc_min = mean - 3 * std; proc_max = mean + 3 * std
-
-                axes[j].hist(data, bins=20, color=cfg["color"], alpha=0.5, density=True, label="Actual Dist")
                 
+                # Vẽ biểu đồ (Giữ nguyên thiết kế gốc)
+                axes[j].hist(data, bins=20, color=cfg["color"], alpha=0.5, density=True)
                 if std > 0:
                     x_p = np.linspace(mean - 5 * std, mean + 5 * std, 200)
                     y_p = (1/(std*np.sqrt(2*np.pi))) * np.exp(-0.5*((x_p-mean)/std)**2)
-                    axes[j].plot(x_p, y_p, color=cfg["color"], lw=2, label="Normal Fit")
-                    
-                    view_min = min(data.min(), spec_min if spec_min > 0 else data.min(), proc_min)
-                    view_max = max(data.max(), spec_max if spec_max < 9000 else data.max(), proc_max)
-                    margin = (view_max - view_min) * 0.4
-                    axes[j].set_xlim(view_min - margin, view_max + margin)
-
-                if spec_min > 0: axes[j].axvline(spec_min, color="red", linestyle="--", linewidth=2, label=f"Spec Min {spec_min:.0f}")
-                if spec_max > 0 and spec_max < 9000: axes[j].axvline(spec_max, color="red", linestyle="--", linewidth=2, label=f"Spec Max {spec_max:.0f}")
-                axes[j].axvline(proc_min, color="blue", linestyle=":", linewidth=2, label=f"-3σ")
-                axes[j].axvline(proc_max, color="blue", linestyle=":", linewidth=2, label=f"+3σ")
-
+                    axes[j].plot(x_p, y_p, color=cfg["color"], lw=2)
+                
+                if spec_min > 0: axes[j].axvline(spec_min, color="red", linestyle="--", linewidth=2)
+                if spec_max > 0 and spec_max < 9000: axes[j].axvline(spec_max, color="red", linestyle="--", linewidth=2)
+                
                 axes[j].set_title(f"{cfg['name']}\n(Mean={mean:.1f}, Std={std:.1f})", fontweight="bold")
-                axes[j].legend(loc="upper right", fontsize="small"); axes[j].grid(alpha=0.3, linestyle="--")
+                axes[j].grid(alpha=0.3, linestyle="--")
 
-                stats_data.append({
-                    "Property": col,
+                # --- PHÂN LOẠI DỮ LIỆU VÀO 3 BẢNG RIÊNG ---
+                row_data = {
+                    "Specification List": specs_str,
+                    "Material": g["Material"],
+                    "Gauge": g["Gauge_Range"],
+                    "N": len(sub_mech),
                     "Limit (Spec)": f"{spec_min:.0f}~{spec_max:.0f}" if (spec_max > 0 and spec_max < 9000) else f"≥ {spec_min:.0f}",
-                    "Actual (Range)": f"{data.min():.1f}~{data.max():.1f}",
-                    "Mean": mean, 
-                    "Std Dev": std, # Lưu giá trị số để tính toán
-                })
+                    "Actual Range": f"{data.min():.1f}~{data.max():.1f}",
+                    "Mean": f"{mean:.1f}",
+                    "Std Dev": f"{std:.1f}"
+                }
+                
+                if col == "TS": ts_summary.append(row_data)
+                elif col == "YS": ys_summary.append(row_data)
+                elif col == "EL": el_summary.append(row_data)
             
             st.pyplot(fig)
-            st.dataframe(pd.DataFrame(stats_data).style.format({"Mean": "{:.1f}", "Std Dev": "{:.1f}"}), use_container_width=True, hide_index=True)
 
-            # --- 2. THU THẬP DỮ LIỆU CHO BẢNG TỔNG HỢP (DÙNG STD DEV THAY CHO PASS RATE) ---
-            col_name = "Product_Spec"
-            specs_str = f"Specs: {', '.join(str(x) for x in sub[col_name].dropna().unique())}" if col_name in sub.columns else "Specs: N/A"
-
-            row = {
-                "Specification List": specs_str,
-                "Material": g["Material"],
-                "Gauge": g["Gauge_Range"],
-                "N": len(sub_mech)
-            }
-            # Gộp các chỉ số TS, YS, EL với Độ lệch chuẩn vào 1 dòng ngang
-            for sd in stats_data:
-                p = sd["Property"]
-                row[f"{p} Spec"] = sd["Limit (Spec)"]
-                row[f"{p} Actual Range"] = sd["Actual (Range)"]
-                row[f"{p} Mean"] = f"{sd['Mean']:.1f}"
-                row[f"{p} Std Dev"] = f"{sd['Std Dev']:.1f}" # <--- THAY THẾ PASS RATE BẰNG STD DEV
-            
-            mech_props_summary.append(row)
-
-        # --- 3. HIỂN THỊ BẢNG TỔNG HỢP CUỐI CÙNG ---
-        if i == len(valid) - 1 and 'mech_props_summary' in locals() and len(mech_props_summary) > 0:
+        # --- 2. HIỂN THỊ 3 BẢNG TỔNG HỢP RIÊNG BIỆT Ở CUỐI VÒNG LẶP ---
+        if i == len(valid) - 1:
             st.markdown("---")
-            st.markdown(f"## 📊 Comprehensive Mechanical Properties Summary for {qgroup}")
-            df_final = pd.DataFrame(mech_props_summary)
+            st.markdown(f"## 📊 Mechanical Properties Comprehensive Report: {qgroup}")
             
-            # Highlight các dòng có độ biến động cao (Std Dev lớn) nếu cần
-            # Ở đây tôi giữ định dạng bảng sạch sẽ, in đậm các cột Std Dev để dễ theo dõi
-            std_cols = [c for c in df_final.columns if "Std Dev" in c]
-            styled_df = df_final.style.set_properties(**{'font-weight': 'bold', 'background-color': '#f9f9f9'}, subset=std_cols)
+            # Hàm hiển thị bảng kèm định dạng
+            def display_summary_table(title, data_list, color_code):
+                if data_list:
+                    st.markdown(f"#### {title}")
+                    df = pd.DataFrame(data_list)
+                    # Highlight cột Std Dev để dễ theo dõi biến động
+                    styled_df = df.style.set_properties(**{'background-color': color_code, 'font-weight': 'bold'}, subset=['Std Dev'])
+                    st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
-            st.dataframe(styled_df, use_container_width=True, hide_index=True)
-            
+            # Hiển thị 3 bảng với 3 màu nhẹ khác nhau để phân biệt
+            display_summary_table("1️⃣ Tensile Strength (TS) Summary", ts_summary, "#e6f2ff") # Xanh dương nhạt
+            display_summary_table("2️⃣ Yield Strength (YS) Summary", ys_summary, "#f2fff2")   # Xanh lá nhạt
+            display_summary_table("3️⃣ Elongation (EL) Summary", el_summary, "#fff5e6")        # Cam nhạt
+
+            # Nút xuất dữ liệu tổng hợp (Gộp cả 3 vào 1 file Excel nhiều sheet nếu cần, nhưng ở đây xuất 1 file CSV gộp)
             import datetime
             today_str = datetime.datetime.now().strftime("%Y%m%d")
-            safe_qgroup = str(qgroup).replace(" / ", "_").replace("/", "_").replace(" ", "")
-            csv_name = f"Mech_Summary_StdDev_{safe_qgroup}_{today_str}.csv"
-            st.download_button("📥 Export Mech Summary CSV", df_final.to_csv(index=False).encode('utf-8-sig'), csv_name)
+            full_df = pd.concat([pd.DataFrame(ts_summary), pd.DataFrame(ys_summary), pd.DataFrame(el_summary)], keys=['TS','YS','EL'])
+            st.download_button("📥 Export Full Mech Report CSV", full_df.to_csv(index=True).encode('utf-8-sig'), f"Full_Mech_Report_{today_str}.csv")
     # ================================
    # ================================
     # 5. LOOKUP (UPDATED: DYNAMIC DEFAULTS)
