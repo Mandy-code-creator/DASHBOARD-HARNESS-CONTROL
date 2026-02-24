@@ -806,19 +806,26 @@ for i, (_, g) in enumerate(valid.iterrows()):
             n_coils = 0
             st.error("❌ No coils found matching these specs.")
 
-        # --- 2. EXTRACT SPECS FROM 'PRODUCT SPECIFICATION CODE' ---
-        col_name = "PRODUCT SPECIFICATION CODE"
+        # --- 2. TỰ ĐỘNG DÒ TÌM CỘT SPECS (AUTO-DETECT) ---
+        col_name = None
+        # Quét tìm cột nào có chứa chữ "SPECIFICATION" hoặc "PRODUCT SPEC"
+        for col in sub.columns:
+            if "SPECIFICATION" in str(col).upper() or "PRODUCT SPEC" in str(col).upper():
+                col_name = col
+                break
         
-        if col_name in sub.columns:
+        if col_name is not None:
             unique_specs = sub[col_name].dropna().unique()
             if len(unique_specs) > 0:
                 specs_str = f"Specs: {', '.join(str(x) for x in unique_specs)}"
             else:
-                specs_str = "Specs: N/A"
+                specs_str = "Specs: N/A (Cột trống)"
         else:
-            specs_str = "Specs: N/A"
+            # Nếu code chạy vào đây, nó sẽ báo lỗi đỏ rực và in ra tên cột thực sự cho bạn thấy
+            st.error(f"🚨 Không tìm thấy cột SPECIFICATION! Danh sách cột thực tế của bạn là: {sub.columns.tolist()}")
+            specs_str = "Specs: N/A (Sai tên cột)"
 
-        # Save to summary list
+        # LƯU VÀO DANH SÁCH TỔNG HỢP
         reverse_lookup_summary.append({
             "Specification List": specs_str,
             "Material": g["Material"],
