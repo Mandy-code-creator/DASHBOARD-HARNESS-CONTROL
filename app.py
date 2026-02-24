@@ -736,7 +736,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.dataframe(filt[["TS","YS","EL"]].describe().T)
 
     # ================================
-    # 6. REVERSE LOOKUP
+   # 6. REVERSE LOOKUP
     # ================================
     elif view_mode == "🎯 Find Target Hardness (Reverse Lookup)":
         
@@ -803,7 +803,12 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.error("❌ No coils found matching these specs.")
 
         # --- 2. Save current iteration data to the summary list ---
+        
+        # Extract Specs data (Assuming it's in the 'Rule_Name' column. Change if your column name is different, e.g., 'Specs')
+        specs_str = ", ".join(sub["Rule_Name"].dropna().unique()) if "Rule_Name" in sub.columns else "N/A"
+
         reverse_lookup_summary.append({
+            "Specs": specs_str,          # <--- Đưa Specs lên làm cột đầu tiên
             "Material": g["Material"],
             "Gauge": g["Gauge_Range"],
             "YS Setup": f"{r_ys_min:.0f} ~ {r_ys_max:.0f}",
@@ -819,8 +824,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.markdown(f"## 🎯 Comprehensive Target Hardness Summary for {qgroup}")
             
             df_target = pd.DataFrame(reverse_lookup_summary)
-            df_target.insert(0, 'STT', range(1, 1 + len(df_target)))
             
+            # Hàm tô màu: Đỏ nếu không tìm thấy cuộn nào, Xanh biển đậm cho Target Hardness
             def style_target(val):
                 if isinstance(val, str) and "❌" in val:
                     return 'color: red; font-weight: bold'
@@ -835,7 +840,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
             )
             
             st.download_button("📥 Export Target Hardness CSV", df_target.to_csv(index=False).encode('utf-8'), "Target_Hardness_Summary.csv", "text/csv")
-    # ================================
     # ================================
     # ================================
    # ================================
