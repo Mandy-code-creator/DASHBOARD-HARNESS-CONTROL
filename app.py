@@ -806,24 +806,17 @@ for i, (_, g) in enumerate(valid.iterrows()):
             n_coils = 0
             st.error("❌ No coils found matching these specs.")
 
-        # --- 2. TỰ ĐỘNG DÒ TÌM CỘT SPECS (AUTO-DETECT) ---
-        col_name = None
-        # Quét tìm cột nào có chứa chữ "SPECIFICATION" hoặc "PRODUCT SPEC"
-        for col in sub.columns:
-            if "SPECIFICATION" in str(col).upper() or "PRODUCT SPEC" in str(col).upper():
-                col_name = col
-                break
+        # --- 2. XỬ LÝ CHUỖI TIÊU CHUẨN (SPECS) TỪ CỘT Product_Spec ---
+        col_name = "Product_Spec"  # Tên cột chính xác tuyệt đối từ danh sách của bạn
         
-        if col_name is not None:
+        if col_name in sub.columns:
             unique_specs = sub[col_name].dropna().unique()
             if len(unique_specs) > 0:
                 specs_str = f"Specs: {', '.join(str(x) for x in unique_specs)}"
             else:
-                specs_str = "Specs: N/A (Cột trống)"
+                specs_str = "Specs: N/A"
         else:
-            # Nếu code chạy vào đây, nó sẽ báo lỗi đỏ rực và in ra tên cột thực sự cho bạn thấy
-            st.error(f"🚨 Không tìm thấy cột SPECIFICATION! Danh sách cột thực tế của bạn là: {sub.columns.tolist()}")
-            specs_str = "Specs: N/A (Sai tên cột)"
+            specs_str = "Specs: N/A"
 
         # LƯU VÀO DANH SÁCH TỔNG HỢP
         reverse_lookup_summary.append({
@@ -836,7 +829,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
             "Target Hardness (HRB)": target_text,
             "Matching Coils": n_coils
         })
-
         # --- 3. DISPLAY THE SUMMARY TABLE AT THE LAST ITERATION ---
         if i == len(valid) - 1 and 'reverse_lookup_summary' in locals() and len(reverse_lookup_summary) > 0:
             st.markdown("---")
