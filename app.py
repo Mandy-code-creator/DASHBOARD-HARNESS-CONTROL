@@ -258,8 +258,8 @@ df = df[
 view_mode = st.sidebar.radio(
     "📊 View Mode",
     [
-        "📊 Executive KPI Dashboard",
         "📋 Data Inspection",
+        "📊 Executive KPI Dashboard",
         "🚀 Global Summary Dashboard",
         "📉 Hardness Analysis (Trend & Dist)",
         "🔗 Correlation: Hardness vs Mech Props",
@@ -523,9 +523,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             use_container_width=True
         )
 # ==========================================================
-   # ==========================================================
-   # ==========================================================
-    # 0. EXECUTIVE KPI DASHBOARD (OVERVIEW)
+     # 0. EXECUTIVE KPI DASHBOARD (OVERVIEW)
     # ==========================================================
     elif view_mode == "📊 Executive KPI Dashboard":
         
