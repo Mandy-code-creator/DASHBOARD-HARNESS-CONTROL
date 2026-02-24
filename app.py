@@ -802,13 +802,16 @@ for i, (_, g) in enumerate(valid.iterrows()):
             n_coils = 0
             st.error("❌ No coils found matching these specs.")
 
-        # --- 2. Save current iteration data to the summary list ---
-        
-        # Extract Specs data (Assuming it's in the 'Rule_Name' column. Change if your column name is different, e.g., 'Specs')
-        specs_str = ", ".join(sub["Rule_Name"].dropna().unique()) if "Rule_Name" in sub.columns else "N/A"
+        # --- 2. Xử lý gộp tên Specs và thêm tiền tố "Specs: " ---
+        # Lấy tất cả các tiêu chuẩn duy nhất trong nhóm này và nối bằng dấu phẩy
+        if "Rule_Name" in sub.columns:
+            unique_specs = sub["Rule_Name"].dropna().unique()
+            specs_str = f"Specs: {', '.join(unique_specs)}" if len(unique_specs) > 0 else "Specs: N/A"
+        else:
+            specs_str = "Specs: N/A"
 
         reverse_lookup_summary.append({
-            "Specs": specs_str,          # <--- Đưa Specs lên làm cột đầu tiên
+            "Specification List": specs_str,  # <--- Cột này sẽ hiển thị "Specs: A653M/S550, E346G/G550, G550/G"
             "Material": g["Material"],
             "Gauge": g["Gauge_Range"],
             "YS Setup": f"{r_ys_min:.0f} ~ {r_ys_max:.0f}",
@@ -825,7 +828,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
             
             df_target = pd.DataFrame(reverse_lookup_summary)
             
-            # Hàm tô màu: Đỏ nếu không tìm thấy cuộn nào, Xanh biển đậm cho Target Hardness
             def style_target(val):
                 if isinstance(val, str) and "❌" in val:
                     return 'color: red; font-weight: bold'
@@ -840,7 +842,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
             )
             
             st.download_button("📥 Export Target Hardness CSV", df_target.to_csv(index=False).encode('utf-8'), "Target_Hardness_Summary.csv", "text/csv")
-    # ================================
     # ================================
    # ================================
     # 7. AI PREDICTION (ULTIMATE FIX: STABLE INPUT + PRO TOOLTIP)
