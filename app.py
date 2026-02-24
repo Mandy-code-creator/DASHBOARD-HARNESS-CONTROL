@@ -808,8 +808,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
         # --- 2. XỬ LÝ CHUỖI TIÊU CHUẨN (SPECS) VÀ LƯU VÀO DANH SÁCH ---
         
-        # SỬA CHỮ "Rule_Name" THÀNH TÊN CỘT ĐÚNG CỦA BẠN (VD: "Specs", "Standard", hoặc "Grade")
-        col_name = "Specs"  # <--- Thay tên cột vào đây
+        # SỬA TÊN CỘT TẠI ĐÂY (VD: "Specs", "Standard", "Grade", v.v.)
+        col_name = "Specs"  # <--- Đổi thành tên cột thực tế chứa 'A653M/S550' trong file của bạn
         
         if col_name in sub.columns:
             unique_specs = sub[col_name].dropna().unique()
@@ -820,10 +820,17 @@ for i, (_, g) in enumerate(valid.iterrows()):
         else:
             specs_str = "Specs: N/A"
 
+        # ĐOẠN ĐẦY ĐỦ (ĐÃ CÓ DẤU ĐÓNG NGOẶC)
         reverse_lookup_summary.append({
             "Specification List": specs_str, 
             "Material": g["Material"],
-            # ... (Các phần dưới giữ nguyên)
+            "Gauge": g["Gauge_Range"],
+            "YS Setup": f"{r_ys_min:.0f} ~ {r_ys_max:.0f}",
+            "TS Setup": f"{r_ts_min:.0f} ~ {r_ts_max:.0f}",
+            "EL Setup": f"{r_el_min:.0f} ~ {r_el_max:.0f}",
+            "Target Hardness (HRB)": target_text,
+            "Matching Coils": n_coils
+        })
 
         # --- 3. HIỂN THỊ BẢNG TỔNG HỢP Ở VÒNG LẶP CUỐI CÙNG ---
         if i == len(valid) - 1 and 'reverse_lookup_summary' in locals() and len(reverse_lookup_summary) > 0:
