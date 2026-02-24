@@ -737,17 +737,17 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.dataframe(filt[["TS","YS","EL"]].describe().T)
 
     # ================================
-   # 6. REVERSE LOOKUP
+ # 6. REVERSE LOOKUP
     # ================================
     elif view_mode == "🎯 Find Target Hardness (Reverse Lookup)":
         
-        # --- 1. Initialize summary list at the first iteration ---
+        # --- 1. KHỞI TẠO DANH SÁCH TỔNG HỢP Ở VÒNG LẶP ĐẦU TIÊN ---
         if i == 0:
             reverse_lookup_summary = []
 
         st.subheader(f"🎯 Target Hardness Calculator: {g['Material']} | {g['Gauge_Range']}")
         
-        # --- YOUR ORIGINAL LOGIC STRICTLY PRESERVED ---
+        # --- LOGIC TÍNH TOÁN GIỚI HẠN THÔNG MINH (GIỮ NGUYÊN) ---
         def calculate_smart_limits(name, col_val, col_spec_min, col_spec_max, step=5.0):
             try:
                 series_val = pd.to_numeric(sub[col_val], errors='coerce')
@@ -780,10 +780,13 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
         c1, c2, c3 = st.columns(3)
         
-        # Added 'key' parameter to prevent Streamlit duplicate widget errors inside loops
-        r_ys_min = c1.number_input("Min YS", value=d_ys_min, step=5.0, key=f"ymin_{i}"); r_ys_max = c1.number_input("Max YS", value=d_ys_max, step=5.0, key=f"ymax_{i}")
-        r_ts_min = c2.number_input("Min TS", value=d_ts_min, step=5.0, key=f"tmin_{i}"); r_ts_max = c2.number_input("Max TS", value=d_ts_max, step=5.0, key=f"tmax_{i}")
-        r_el_min = c3.number_input("Min EL", value=d_el_min, step=1.0, key=f"emin_{i}"); r_el_max = c3.number_input("Max EL", value=d_el_max, step=1.0, key=f"emax_{i}")
+        # THÊM 'key' ĐỂ TRÁNH LỖI TRÙNG LẶP WIDGET TRONG STREAMLIT
+        r_ys_min = c1.number_input("Min YS", value=d_ys_min, step=5.0, key=f"ymin_{i}")
+        r_ys_max = c1.number_input("Max YS", value=d_ys_max, step=5.0, key=f"ymax_{i}")
+        r_ts_min = c2.number_input("Min TS", value=d_ts_min, step=5.0, key=f"tmin_{i}")
+        r_ts_max = c2.number_input("Max TS", value=d_ts_max, step=5.0, key=f"tmax_{i}")
+        r_el_min = c3.number_input("Min EL", value=d_el_min, step=1.0, key=f"emin_{i}")
+        r_el_max = c3.number_input("Max EL", value=d_el_max, step=1.0, key=f"emax_{i}")
 
         filtered = sub[
             (sub['YS'] >= r_ys_min) & (sub['YS'] <= r_ys_max) &
@@ -803,16 +806,18 @@ for i, (_, g) in enumerate(valid.iterrows()):
             n_coils = 0
             st.error("❌ No coils found matching these specs.")
 
-        # --- 2. Xử lý gộp tên Specs và thêm tiền tố "Specs: " ---
-        # Lấy tất cả các tiêu chuẩn duy nhất trong nhóm này và nối bằng dấu phẩy
+        # --- 2. XỬ LÝ CHUỖI TIÊU CHUẨN (SPECS) VÀ LƯU VÀO DANH SÁCH ---
         if "Rule_Name" in sub.columns:
             unique_specs = sub["Rule_Name"].dropna().unique()
-            specs_str = f"Specs: {', '.join(unique_specs)}" if len(unique_specs) > 0 else "Specs: N/A"
+            if len(unique_specs) > 0:
+                specs_str = f"Specs: {', '.join(str(x) for x in unique_specs)}"
+            else:
+                specs_str = "Specs: N/A"
         else:
             specs_str = "Specs: N/A"
 
         reverse_lookup_summary.append({
-            "Specification List": specs_str,  # <--- Cột này sẽ hiển thị "Specs: A653M/S550, E346G/G550, G550/G"
+            "Specification List": specs_str,  # Hiển thị dạng "Specs: A653M, G550..."
             "Material": g["Material"],
             "Gauge": g["Gauge_Range"],
             "YS Setup": f"{r_ys_min:.0f} ~ {r_ys_max:.0f}",
@@ -822,13 +827,14 @@ for i, (_, g) in enumerate(valid.iterrows()):
             "Matching Coils": n_coils
         })
 
-        # --- 3. Display the comprehensive summary table at the last iteration ---
+        # --- 3. HIỂN THỊ BẢNG TỔNG HỢP Ở VÒNG LẶP CUỐI CÙNG ---
         if i == len(valid) - 1 and 'reverse_lookup_summary' in locals() and len(reverse_lookup_summary) > 0:
             st.markdown("---")
             st.markdown(f"## 🎯 Comprehensive Target Hardness Summary for {qgroup}")
             
             df_target = pd.DataFrame(reverse_lookup_summary)
             
+            # Tô màu: Đỏ nếu không có cuộn nào, Xanh biển đậm cho dòng đạt yêu cầu
             def style_target(val):
                 if isinstance(val, str) and "❌" in val:
                     return 'color: red; font-weight: bold'
@@ -842,7 +848,16 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 hide_index=True
             )
             
-            st.download_button("📥 Export Target Hardness CSV", df_target.to_csv(index=False).encode('utf-8'), "Target_Hardness_Summary.csv", "text/csv")
+            # TẠO TÊN FILE XUẤT ĐỘNG CHỨA NGÀY THÁNG VÀ NHÓM CHẤT LƯỢNG
+            import datetime
+            today_str = datetime.datetime.now().strftime("%Y%m%d")
+            # Đổi dấu gạch chéo thành gạch dưới để tránh lỗi tên file (VD: "CQ00 / CQ06" -> "CQ00_CQ06")
+            safe_qgroup = str(qgroup).replace(" / ", "_").replace("/", "_").replace(" ", "")
+            csv_filename = f"Target_Hardness_{safe_qgroup}_{today_str}.csv"
+            
+            # Xuất file CSV với chuẩn utf-8-sig để không bị lỗi font Tiếng Việt khi mở bằng Excel
+            csv_data = df_target.to_csv(index=False).encode('utf-8-sig')
+            st.download_button(f"📥 Export Target Hardness CSV ({today_str})", csv_data, csv_filename, "text/csv")
     # ================================
    # ================================
     # 7. AI PREDICTION (ULTIMATE FIX: STABLE INPUT + PRO TOOLTIP)
