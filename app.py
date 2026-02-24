@@ -716,14 +716,14 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     "Property": col,
                     "Limit (Spec)": f"{spec_min:.0f}~{spec_max:.0f}" if (spec_max > 0 and spec_max < 9000) else f"≥ {spec_min:.0f}",
                     "Actual (Range)": f"{data.min():.1f}~{data.max():.1f}",
-                    "Mean": mean, "Std Dev": std,
-                    "Pass Rate": f"{(data >= spec_min).mean() * 100:.1f}%" if spec_min > 0 else "100%"
+                    "Mean": mean, 
+                    "Std Dev": std, # Lưu giá trị số để tính toán
                 })
             
             st.pyplot(fig)
             st.dataframe(pd.DataFrame(stats_data).style.format({"Mean": "{:.1f}", "Std Dev": "{:.1f}"}), use_container_width=True, hide_index=True)
 
-            # --- 2. THU THẬP DỮ LIỆU CHO BẢNG TỔNG HỢP (THÊM CỘT ACTUAL RANGE) ---
+            # --- 2. THU THẬP DỮ LIỆU CHO BẢNG TỔNG HỢP (DÙNG STD DEV THAY CHO PASS RATE) ---
             col_name = "Product_Spec"
             specs_str = f"Specs: {', '.join(str(x) for x in sub[col_name].dropna().unique())}" if col_name in sub.columns else "Specs: N/A"
 
@@ -733,13 +733,13 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 "Gauge": g["Gauge_Range"],
                 "N": len(sub_mech)
             }
-            # Gộp các chỉ số TS, YS, EL và Actual Range vào 1 dòng ngang
+            # Gộp các chỉ số TS, YS, EL với Độ lệch chuẩn vào 1 dòng ngang
             for sd in stats_data:
                 p = sd["Property"]
                 row[f"{p} Spec"] = sd["Limit (Spec)"]
-                row[f"{p} Actual Range"] = sd["Actual (Range)"] # <--- THÊM CỘT ACTUAL RANGE
+                row[f"{p} Actual Range"] = sd["Actual (Range)"]
                 row[f"{p} Mean"] = f"{sd['Mean']:.1f}"
-                row[f"{p} Pass Rate"] = sd["Pass Rate"]
+                row[f"{p} Std Dev"] = f"{sd['Std Dev']:.1f}" # <--- THAY THẾ PASS RATE BẰNG STD DEV
             
             mech_props_summary.append(row)
 
@@ -749,21 +749,17 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.markdown(f"## 📊 Comprehensive Mechanical Properties Summary for {qgroup}")
             df_final = pd.DataFrame(mech_props_summary)
             
-            def style_pr(val):
-                if isinstance(val, str) and "%" in val:
-                    try:
-                        if float(val.replace("%","")) < 100: return 'color: red; font-weight: bold'
-                    except: pass
-                return ''
+            # Highlight các dòng có độ biến động cao (Std Dev lớn) nếu cần
+            # Ở đây tôi giữ định dạng bảng sạch sẽ, in đậm các cột Std Dev để dễ theo dõi
+            std_cols = [c for c in df_final.columns if "Std Dev" in c]
+            styled_df = df_final.style.set_properties(**{'font-weight': 'bold', 'background-color': '#f9f9f9'}, subset=std_cols)
 
-            pr_cols = [c for c in df_final.columns if "Pass Rate" in c]
-            st.dataframe(df_final.style.applymap(style_pr, subset=pr_cols), 
-                         use_container_width=True, hide_index=True)
+            st.dataframe(styled_df, use_container_width=True, hide_index=True)
             
             import datetime
             today_str = datetime.datetime.now().strftime("%Y%m%d")
             safe_qgroup = str(qgroup).replace(" / ", "_").replace("/", "_").replace(" ", "")
-            csv_name = f"Mech_Summary_{safe_qgroup}_{today_str}.csv"
+            csv_name = f"Mech_Summary_StdDev_{safe_qgroup}_{today_str}.csv"
             st.download_button("📥 Export Mech Summary CSV", df_final.to_csv(index=False).encode('utf-8-sig'), csv_name)
     # ================================
    # ================================
