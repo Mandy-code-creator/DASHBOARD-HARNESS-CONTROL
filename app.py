@@ -739,7 +739,14 @@ for i, (_, g) in enumerate(valid.iterrows()):
     # 6. REVERSE LOOKUP
     # ================================
     elif view_mode == "🎯 Find Target Hardness (Reverse Lookup)":
-        st.subheader("🎯 Target Hardness Calculator (Smart Limits)")
+        
+        # --- 1. Initialize summary list at the first iteration ---
+        if i == 0:
+            reverse_lookup_summary = []
+
+        st.subheader(f"🎯 Target Hardness Calculator: {g['Material']} | {g['Gauge_Range']}")
+        
+        # --- YOUR ORIGINAL LOGIC STRICTLY PRESERVED ---
         def calculate_smart_limits(name, col_val, col_spec_min, col_spec_max, step=5.0):
             try:
                 series_val = pd.to_numeric(sub[col_val], errors='coerce')
@@ -771,20 +778,63 @@ for i, (_, g) in enumerate(valid.iterrows()):
         d_el_min, d_el_max = calculate_smart_limits('EL', 'EL', 'Standard EL min', 'Standard EL max', 1.0)
 
         c1, c2, c3 = st.columns(3)
-        r_ys_min = c1.number_input("Min YS", value=d_ys_min, step=5.0); r_ys_max = c1.number_input("Max YS", value=d_ys_max, step=5.0)
-        r_ts_min = c2.number_input("Min TS", value=d_ts_min, step=5.0); r_ts_max = c2.number_input("Max TS", value=d_ts_max, step=5.0)
-        r_el_min = c3.number_input("Min EL", value=d_el_min, step=1.0); r_el_max = c3.number_input("Max EL", value=d_el_max, step=1.0)
+        
+        # Added 'key' parameter to prevent Streamlit duplicate widget errors inside loops
+        r_ys_min = c1.number_input("Min YS", value=d_ys_min, step=5.0, key=f"ymin_{i}"); r_ys_max = c1.number_input("Max YS", value=d_ys_max, step=5.0, key=f"ymax_{i}")
+        r_ts_min = c2.number_input("Min TS", value=d_ts_min, step=5.0, key=f"tmin_{i}"); r_ts_max = c2.number_input("Max TS", value=d_ts_max, step=5.0, key=f"tmax_{i}")
+        r_el_min = c3.number_input("Min EL", value=d_el_min, step=1.0, key=f"emin_{i}"); r_el_max = c3.number_input("Max EL", value=d_el_max, step=1.0, key=f"emax_{i}")
 
         filtered = sub[
             (sub['YS'] >= r_ys_min) & (sub['YS'] <= r_ys_max) &
             (sub['TS'] >= r_ts_min) & (sub['TS'] <= r_ts_max) &
             ((sub['EL'] >= r_el_min) | (r_el_min==0)) & (sub['EL'] <= r_el_max)
         ]
+        
         if not filtered.empty:
-            st.success(f"✅ Target Hardness: **{filtered['Hardness_LINE'].min():.1f} ~ {filtered['Hardness_LINE'].max():.1f} HRB** (N={len(filtered)})")
+            target_min = filtered['Hardness_LINE'].min()
+            target_max = filtered['Hardness_LINE'].max()
+            n_coils = len(filtered)
+            target_text = f"{target_min:.1f} ~ {target_max:.1f}"
+            st.success(f"✅ Target Hardness: **{target_text} HRB** (N={n_coils})")
             st.dataframe(filtered[['COIL_NO','Hardness_LINE','YS','TS','EL']], height=300)
-        else: st.error("❌ No coils found matching these specs.")
+        else: 
+            target_text = "❌ No Coils Found"
+            n_coils = 0
+            st.error("❌ No coils found matching these specs.")
 
+        # --- 2. Save current iteration data to the summary list ---
+        reverse_lookup_summary.append({
+            "Material": g["Material"],
+            "Gauge": g["Gauge_Range"],
+            "YS Setup": f"{r_ys_min:.0f} ~ {r_ys_max:.0f}",
+            "TS Setup": f"{r_ts_min:.0f} ~ {r_ts_max:.0f}",
+            "EL Setup": f"{r_el_min:.0f} ~ {r_el_max:.0f}",
+            "Target Hardness (HRB)": target_text,
+            "Matching Coils": n_coils
+        })
+
+        # --- 3. Display the comprehensive summary table at the last iteration ---
+        if i == len(valid) - 1 and 'reverse_lookup_summary' in locals() and len(reverse_lookup_summary) > 0:
+            st.markdown("---")
+            st.markdown(f"## 🎯 Comprehensive Target Hardness Summary for {qgroup}")
+            
+            df_target = pd.DataFrame(reverse_lookup_summary)
+            df_target.insert(0, 'STT', range(1, 1 + len(df_target)))
+            
+            def style_target(val):
+                if isinstance(val, str) and "❌" in val:
+                    return 'color: red; font-weight: bold'
+                elif isinstance(val, str) and "~" in val:
+                    return 'color: #0056b3; font-weight: bold; background-color: #e6f2ff'
+                return ''
+
+            st.dataframe(
+                df_target.style.applymap(style_target, subset=['Target Hardness (HRB)']),
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            st.download_button("📥 Export Target Hardness CSV", df_target.to_csv(index=False).encode('utf-8'), "Target_Hardness_Summary.csv", "text/csv")
     # ================================
     # ================================
     # ================================
