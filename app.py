@@ -662,7 +662,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             if conclusion_data: 
                 st.dataframe(pd.DataFrame(conclusion_data), use_container_width=True, hide_index=True)
     # ================================
-   # 4. MECH PROPS ANALYSIS
+  # 4. MECH PROPS ANALYSIS
     # ================================
     elif view_mode == "⚙️ Mech Props Analysis":
         
@@ -670,7 +670,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
         if i == 0:
             mech_props_summary = []
 
-        st.markdown("### ⚙️ Mechanical Properties Analysis (Distribution vs Specs)")
+        st.markdown(f"### ⚙️ Mechanical Properties Analysis: {g['Material']} | {g['Gauge_Range']}")
         sub_mech = sub.dropna(subset=["TS","YS","EL"])
         
         if sub_mech.empty: 
@@ -723,7 +723,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.pyplot(fig)
             st.dataframe(pd.DataFrame(stats_data).style.format({"Mean": "{:.1f}", "Std Dev": "{:.1f}"}), use_container_width=True, hide_index=True)
 
-            # --- 2. THU THẬP DỮ LIỆU CHO BẢNG TỔNG HỢP ---
+            # --- 2. THU THẬP DỮ LIỆU CHO BẢNG TỔNG HỢP (THÊM CỘT ACTUAL RANGE) ---
             col_name = "Product_Spec"
             specs_str = f"Specs: {', '.join(str(x) for x in sub[col_name].dropna().unique())}" if col_name in sub.columns else "Specs: N/A"
 
@@ -733,10 +733,11 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 "Gauge": g["Gauge_Range"],
                 "N": len(sub_mech)
             }
-            # Gộp các chỉ số YS, TS, EL vào 1 dòng ngang
+            # Gộp các chỉ số TS, YS, EL và Actual Range vào 1 dòng ngang
             for sd in stats_data:
                 p = sd["Property"]
                 row[f"{p} Spec"] = sd["Limit (Spec)"]
+                row[f"{p} Actual Range"] = sd["Actual (Range)"] # <--- THÊM CỘT ACTUAL RANGE
                 row[f"{p} Mean"] = f"{sd['Mean']:.1f}"
                 row[f"{p} Pass Rate"] = sd["Pass Rate"]
             
@@ -748,7 +749,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.markdown(f"## 📊 Comprehensive Mechanical Properties Summary for {qgroup}")
             df_final = pd.DataFrame(mech_props_summary)
             
-            # Highlight Pass Rate < 100%
             def style_pr(val):
                 if isinstance(val, str) and "%" in val:
                     try:
@@ -757,11 +757,13 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 return ''
 
             pr_cols = [c for c in df_final.columns if "Pass Rate" in c]
-            st.dataframe(df_final.style.applymap(style_pr, subset=pass_rate_cols if 'pass_rate_cols' in locals() else pr_cols), 
+            st.dataframe(df_final.style.applymap(style_pr, subset=pr_cols), 
                          use_container_width=True, hide_index=True)
             
             import datetime
-            csv_name = f"Mech_Summary_{str(qgroup).replace(' ','')}_{datetime.datetime.now().strftime('%Y%m%d')}.csv"
+            today_str = datetime.datetime.now().strftime("%Y%m%d")
+            safe_qgroup = str(qgroup).replace(" / ", "_").replace("/", "_").replace(" ", "")
+            csv_name = f"Mech_Summary_{safe_qgroup}_{today_str}.csv"
             st.download_button("📥 Export Mech Summary CSV", df_final.to_csv(index=False).encode('utf-8-sig'), csv_name)
     # ================================
    # ================================
