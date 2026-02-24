@@ -904,9 +904,14 @@ for i, (_, g) in enumerate(valid.iterrows()):
             c2.metric("Yield Strength (YS)", f"{int(round(preds['YS']))} MPa", f"{get_delta(preds['YS'], last_ys)} vs Last")
             c3.metric("Elongation (EL)", f"{round(preds['EL'], 1)} %", f"{get_delta(preds['EL'], last_el)} vs Last")
     # ================================
-    # 8. CONTROL LIMIT CALCULATOR
+   # 8. CONTROL LIMIT CALCULATOR
     # ================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
+        
+        # --- THÊM CODE: KHỞI TẠO DANH SÁCH TỔNG HỢP Ở VÒNG LẶP ĐẦU TIÊN ---
+        if i == 0:
+            all_groups_summary = []
+
         st.markdown(f"### 🎛️ Control Limits Analysis: {g['Material']} | {g['Gauge_Range']}")
         data = sub["Hardness_LINE"].dropna()
         data_lab = sub["Hardness_LAB"].dropna()
@@ -936,6 +941,19 @@ for i, (_, g) in enumerate(valid.iterrows()):
             mrs = np.abs(np.diff(data)); mr_bar = np.mean(mrs); sigma_imr = mr_bar / 1.128
             m4_min, m4_max = mu - sigma_n * sigma_imr, mu + sigma_n * sigma_imr
 
+            # --- THÊM CODE: LƯU DỮ LIỆU CỦA VÒNG LẶP HIỆN TẠI VÀO DANH SÁCH ---
+            all_groups_summary.append({
+                "Quality": g["Quality_Group"],
+                "Material": g["Material"],
+                "Gauge": g["Gauge_Range"],
+                "N": len(data),
+                "Current Spec": f"{spec_min:.1f} ~ {display_max:.1f}",
+                "M1: Standard": f"{m1_min:.1f} ~ {m1_max:.1f}",
+                "M2: IQR (Robust)": f"{m2_min:.1f} ~ {m2_max:.1f}",
+                "M4: I-MR (Optimal)": f"{m4_min:.1f} ~ {m4_max:.1f}",
+                "Status": "✅ Stable" if (display_max > 0 and m4_max <= display_max) else "⚠️ Narrow Spec"
+            })
+
             col_chart, col_table = st.columns([2, 1])
             with col_chart:
                 fig, ax = plt.subplots(figsize=(10, 5))
@@ -960,3 +978,30 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 ]
                 st.dataframe(pd.DataFrame(comp_data).style.format("{:.1f}", subset=["Min", "Max", "Range"]), use_container_width=True, hide_index=True)
                 st.info("**Color Guide:**\n* 🔵 LINE (Blue) vs 🟠 LAB (Orange)\n* **M4 (I-MR)** is best for detecting process drift.")
+
+        # --- THÊM CODE: HIỂN THỊ BẢNG TỔNG HỢP Ở VÒNG LẶP CUỐI CÙNG ---
+        if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
+            st.markdown("---")
+            st.markdown(f"## 📊 Summary of Control Limits for {qgroup}")
+            
+            df_total = pd.DataFrame(all_groups_summary)
+            
+            # Hàm tô màu Status (Đỏ/Xanh)
+            def style_status(val):
+                color = 'red' if 'Narrow' in val else 'green'
+                return f'color: {color}; font-weight: bold'
+
+            # Áp dụng màu cho Status và Highlight cột phương pháp tối ưu (M4)
+            styled_df = (
+                df_total.style
+                .applymap(style_status, subset=['Status'])
+                .set_properties(**{'background-color': '#e6f2ff', 'color': '#004085', 'font-weight': 'bold', 'border': '2px solid #0056b3'}, subset=['M4: I-MR (Optimal)'])
+            )
+
+            st.dataframe(
+                styled_df,
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            st.download_button("📥 Export Summary CSV", df_total.to_csv(index=False).encode('utf-8'), "SPC_Full_Summary.csv")
