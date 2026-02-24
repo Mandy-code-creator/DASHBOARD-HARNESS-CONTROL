@@ -258,6 +258,7 @@ df = df[
 view_mode = st.sidebar.radio(
     "📊 View Mode",
     [
+        "📊 Executive KPI Dashboard",
         "📋 Data Inspection",
         "🚀 Global Summary Dashboard",
         "📉 Hardness Analysis (Trend & Dist)",
@@ -521,7 +522,113 @@ for i, (_, g) in enumerate(valid.iterrows()):
             .apply(highlight_ng_rows, axis=1), 
             use_container_width=True
         )
+# ==========================================================
+    # 0. EXECUTIVE KPI DASHBOARD (TỔNG QUAN)
+    # ==========================================================
+    elif view_mode == "📊 Executive KPI Dashboard":
+        
+        # CHỈ RENDER 1 LẦN DUY NHẤT (Ở vòng lặp đầu tiên)
+        if i == 0:
+            st.markdown("## 📊 Executive KPI Dashboard (Tổng quan Chất lượng Toàn cục)")
+            
+            # 1. GOM TOÀN BỘ DỮ LIỆU TỪ TẤT CẢ CÁC NHÓM
+            full_df = pd.concat([s for _, s in valid])
+            df_kpi = full_df.dropna(subset=['TS', 'YS', 'EL']).copy()
+            
+            if df_kpi.empty:
+                st.warning("⚠️ Không có đủ dữ liệu Cơ tính để hiển thị Dashboard.")
+            else:
+                total_coils = len(df_kpi)
+                
+                # 2. TÍNH TOÁN TỶ LỆ ĐẠT (PASS RATE) CHÍNH XÁC
+                def check_pass(val, min_col, max_col):
+                    s_min = df_kpi[min_col].fillna(0) if min_col in df_kpi.columns else 0
+                    s_max = df_kpi[max_col].fillna(9999).replace(0, 9999) if max_col in df_kpi.columns else 9999
+                    return (val >= s_min) & (val <= s_max)
+                
+                df_kpi['TS_Pass'] = check_pass(df_kpi['TS'], 'Standard TS min', 'Standard TS max')
+                df_kpi['YS_Pass'] = check_pass(df_kpi['YS'], 'Standard YS min', 'Standard YS max')
+                df_kpi['EL_Pass'] = df_kpi['EL'] >= (df_kpi['Standard EL min'].fillna(0) if 'Standard EL min' in df_kpi.columns else 0)
+                
+                # Đạt tổng thể (Pass All) là khi thoả mãn cả TS, YS và EL
+                df_kpi['All_Pass'] = df_kpi['TS_Pass'] & df_kpi['YS_Pass'] & df_kpi['EL_Pass']
+                
+                yield_rate = df_kpi['All_Pass'].mean() * 100
+                ts_yield = df_kpi['TS_Pass'].mean() * 100
+                ys_yield = df_kpi['YS_Pass'].mean() * 100
+                el_yield = df_kpi['EL_Pass'].mean() * 100
+                
+                # --- HIỂN THỊ CÁC CHỈ SỐ LỚN (BIG METRICS) ---
+                st.markdown("### 🏆 Chỉ số Chất lượng Toàn cục (Overall Metrics)")
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("📦 Total Coils Tested", f"{total_coils:,}")
+                
+                # Đổi màu đỏ nếu Yield < 100%, xanh nếu hoàn hảo
+                delta_val = f"{yield_rate - 100:.1f}%" if yield_rate < 100 else "Perfect"
+                col2.metric("✅ Overall Yield Rate", f"{yield_rate:.1f}%", delta_val, delta_color="normal" if yield_rate == 100 else "inverse")
+                
+                col3.metric("🎯 TS Pass Rate", f"{ts_yield:.1f}%")
+                col4.metric("🎯 YS Pass Rate", f"{ys_yield:.1f}%")
+                
+                st.markdown("---")
+                
+                # --- 3. BẢNG "DANH SÁCH ĐEN" (HIGH-RISK WATCHLIST) ---
+                st.markdown("### ⚠️ Cảnh báo Rủi ro (High-Risk Specs Watchlist)")
+                st.caption("Danh sách Top các mã tiêu chuẩn có tỷ lệ đạt cơ tính thấp nhất hoặc biến động độ cứng lớn, cần ưu tiên rà soát.")
+                
+                col_spec = "Product_Spec" if "Product_Spec" in df_kpi.columns else "Rule_Name"
+                
+                # Thống kê theo từng mã Spec
+                risk_summary = df_kpi.groupby(col_spec).agg(
+                    Total_Coils=('COIL_NO', 'count'),
+                    Pass_Coils=('All_Pass', 'sum'),
+                    Hardness_Mean=('Hardness_LINE', 'mean'),
+                    Hardness_Std=('Hardness_LINE', 'std')
+                ).reset_index()
+                
+                # Tính tỷ lệ đạt cho từng mã
+                risk_summary['Yield Rate (%)'] = (risk_summary['Pass_Coils'] / risk_summary['Total_Coils'] * 100).round(1)
+                
+                # Lọc các mã có N >= 3 (để loại bỏ nhiễu) và xếp hạng từ thấp đến cao (Ưu tiên hiện mã rớt nhiều nhất)
+                risk_top = risk_summary[risk_summary['Total_Coils'] >= 3].sort_values('Yield Rate (%)').head(10)
+                
+                if not risk_top.empty:
+                    # Đổi tên cột cho đẹp
+                    risk_top = risk_top.rename(columns={
+                        col_spec: "Specification",
+                        "Total_Coils": "Tested Coils",
+                        "Hardness_Mean": "Avg Hardness",
+                        "Hardness_Std": "Hardness Std Dev"
+                    })
+                    
+                    # Highlight màu đỏ in đậm cho các dòng có Yield Rate < 100%
+                    def style_risk(val):
+                        if isinstance(val, (int, float)) and val < 100:
+                            return 'color: #d32f2f; font-weight: bold; background-color: #ffebee'
+                        elif isinstance(val, (int, float)) and val == 100:
+                            return 'color: #388e3c; font-weight: bold'
+                        return ''
+                    
+                    # Highlight cột Std Dev nếu biến động > 5.0 HRB (Cảnh báo dao động mạnh)
+                    def style_std(val):
+                        if isinstance(val, (int, float)) and val > 5.0:
+                            return 'color: #f57c00; font-weight: bold'
+                        return ''
 
+                    styled_risk = (
+                        risk_top.style
+                        .applymap(style_risk, subset=['Yield Rate (%)'])
+                        .applymap(style_std, subset=['Hardness Std Dev'])
+                        .format({
+                            "Yield Rate (%)": "{:.1f}%",
+                            "Avg Hardness": "{:.1f}",
+                            "Hardness Std Dev": "{:.2f}"
+                        })
+                    )
+                    
+                    st.dataframe(styled_risk, use_container_width=True, hide_index=True)
+                else:
+                    st.success("🎉 Tuyệt vời! Tất cả các mã hàng đều ổn định và không có rủi ro đáng kể.")
     # ================================
     # 2. HARDNESS ANALYSIS
     # ================================
