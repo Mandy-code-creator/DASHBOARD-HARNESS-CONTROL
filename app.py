@@ -534,14 +534,31 @@ for i, (_, g) in enumerate(valid.iterrows()):
             
             # --- BƯỚC BẢO VỆ DỮ LIỆU ---
             # Trích xuất danh sách các DataFrame từ valid
-            dfs_to_concat = [s for _, s in valid]
+            dfs_to_concat = [s for _, s in valid.iterrows()]  # SỬA LẠI Ở ĐÂY
             
             # Kiểm tra xem danh sách có bị rỗng (do đang chọn nhầm bộ lọc) không
             if len(dfs_to_concat) == 0:
                 st.warning("⚠️ Không có dữ liệu nào phù hợp với bộ lọc hiện tại. Vui lòng nới lỏng Filter bên thanh điều hướng.")
             else:
                 # 1. GOM TOÀN BỘ DỮ LIỆU TỪ TẤT CẢ CÁC NHÓM (Lúc này đã an toàn 100%)
-                full_df = pd.concat(dfs_to_concat)
+                
+                # --- PHẢI THỰC HIỆN LỌC LẠI DỮ LIỆU GỐC THEO GROUP --- 
+                # Do biến 'valid' chỉ chứa thông tin nhóm (Quality, Material, Gauge...), 
+                # không chứa dữ liệu thật (Hardness_LINE, TS, YS, EL), ta phải trích xuất lại từ df gốc.
+                
+                extracted_dfs = []
+                for _, grp in valid.iterrows():
+                    sub_df = df[
+                        (df["Rolling_Type"] == grp["Rolling_Type"]) &
+                        (df["Metallic_Type"] == grp["Metallic_Type"]) &
+                        (df["Quality_Group"] == grp["Quality_Group"]) &
+                        (df["Gauge_Range"] == grp["Gauge_Range"]) &
+                        (df["Material"] == grp["Material"])
+                    ]
+                    extracted_dfs.append(sub_df)
+                
+                full_df = pd.concat(extracted_dfs)
+                
                 df_kpi = full_df.dropna(subset=['TS', 'YS', 'EL']).copy()
                 
                 if df_kpi.empty:
