@@ -394,6 +394,7 @@ if view_mode == "🚀 Global Summary Dashboard":
             spec_el_min = sub_grp["Standard EL min"].max() if "Standard EL min" in sub_grp else 0
             
             X = sub_grp[["Hardness_LINE"]].values
+
             
             # --- TS Analysis ---
             m_ts = LinearRegression().fit(X, sub_grp["TS"].values)
