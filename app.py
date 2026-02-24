@@ -3,6 +3,7 @@
 # FIXED: NameError (fig_to_png), High Contrast Charts, Real Date Range
 # ================================
 
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -21,7 +22,47 @@ from plotly.subplots import make_subplots
 # ================================
 st.set_page_config(page_title="SPC Hardness Dashboard", layout="wide")
 st.title("📊 Hardness – Visual Analytics Dashboard")
+# ================================
+def add_custom_css():
+    st.markdown("""
+        <style>
+        /* 1. Nền tổng thể: Xám nhạt hiện đại */
+        .stApp {
+            background-color: #f8f9fa;
+        }
+        
+        /* 2. Sidebar: Trắng tinh + Đổ bóng nhẹ tách biệt */
+        [data-testid="stSidebar"] {
+            background-color: #ffffff;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.05);
+            border-right: none;
+        }
 
+        /* 3. Tiêu đề: Màu xanh đen doanh nghiệp (Corporate Blue) */
+        h1, h2, h3 {
+            color: #2c3e50 !important;
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-weight: 600;
+        }
+
+        /* 4. Các khối dữ liệu (Metric Cards): Trắng + Bo góc + Đổ bóng */
+        [data-testid="stMetricValue"] {
+            background-color: white;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            color: #007bff; /* Số màu xanh dương */
+        }
+
+        /* 5. Bảng dữ liệu: Header màu xám đậm */
+        thead tr th:first-child {display:none}
+        tbody th {display:none}
+        .stDataFrame {
+            border: 1px solid #e0e0e0;
+            border-radius: 5px;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 # ================================
 # UTILS (QUAN TRỌNG: KHÔNG ĐƯỢC XÓA)
 # ================================
@@ -323,11 +364,11 @@ if view_mode == "🚀 Global Summary Dashboard":
     # --- TAB 2: PHÂN TÍCH RỦI RO (ĐÃ THÊM QUALITY & SPECS) ---
     with tab2:
         st.markdown("#### 🧠 AI Decision Support (Risk-Based)")
-        st.caption("Phân tích rủi ro độc lập cho từng cơ tính (TS / YS / EL).")
+        st.caption("AI Decision Support (Risk-Based) (TS / YS / EL).")
 
         col_in1, col_in2 = st.columns([1, 1])
         with col_in1:
-            user_hrb = st.number_input("1️⃣ Nhập Độ cứng Mục tiêu (Target HRB):", value=60.0, step=0.5, format="%.1f")
+            user_hrb = st.number_input("1️⃣ Target HRB", value=60.0, step=0.5, format="%.1f")
         with col_in2:
             safety_k = st.selectbox("2️⃣ Sellect Safety Factor):", [1.0, 2.0, 3.0], index=1,
                                     format_func=lambda x: f"{x} Sigma (reliability {68 if x==1 else (95 if x==2 else 99.7)}%)")
@@ -597,21 +638,27 @@ for i, (_, g) in enumerate(valid.iterrows()):
             ax.set_xticks(x); ax.set_xticklabels(summary["HRB_bin"])
             ax.set_title("Hardness vs Mechanical Properties"); ax.grid(True, ls="--", alpha=0.5); ax.legend(); st.pyplot(fig)
             
-            st.markdown("#### 📌 Quick Conclusion per Hardness Bin")
+            # --- CẬP NHẬT: BỌC BẢNG VÀO ST.EXPANDER ĐỂ THU GỌN ---
+        st.markdown("#### 📌 Quick Conclusion per Hardness Bin")
+        
+        # Sử dụng expander với trạng thái mặc định là đóng (expanded=False)
+        with st.expander("Click to view detailed Hardness Bin status", expanded=False):
             conclusion_data = []
             for row in summary.itertuples():
                 def get_status(val_min, val_max, spec_min, spec_max):
                     pass_min = (val_min >= spec_min) if (pd.notna(spec_min) and spec_min > 0) else True
                     pass_max = (val_max <= spec_max) if (pd.notna(spec_max) and spec_max > 0) else True
                     return "✅" if (pass_min and pass_max) else "⚠️"
+                
                 conclusion_data.append({
                     "Hardness Range": row.HRB_bin,
                     "TS Check": f"{get_status(row.TS_min, row.TS_max, row.Std_TS_min, row.Std_TS_max)}",
                     "YS Check": f"{get_status(row.YS_min, row.YS_max, row.Std_YS_min, row.Std_YS_max)}",
                     "EL Check": f"{get_status(row.EL_min, row.EL_max, row.Std_EL_min, row.Std_EL_max)}"
                 })
-            if conclusion_data: st.dataframe(pd.DataFrame(conclusion_data), use_container_width=True, hide_index=True)
-
+            
+            if conclusion_data: 
+                st.dataframe(pd.DataFrame(conclusion_data), use_container_width=True, hide_index=True)
     # ================================
     # 4. MECH PROPS ANALYSIS
     # ================================
@@ -668,15 +715,25 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.dataframe(pd.DataFrame(stats_data).style.format({"Mean": "{:.1f}", "Std Dev": "{:.1f}"}), use_container_width=True, hide_index=True)
 
     # ================================
-    # 5. LOOKUP
+   # ================================
+    # 5. LOOKUP (UPDATED: DYNAMIC DEFAULTS)
     # ================================
     elif view_mode == "🔍 Lookup: Hardness Range → Actual Mech Props":
         c1, c2 = st.columns(2)
-        mn = st.number_input("Min HRB", 58.0, step=0.5, key=f"lk1_{uuid.uuid4()}")
-        mx = st.number_input("Max HRB", 65.0, step=0.5, key=f"lk2_{uuid.uuid4()}")
+        
+        # Lấy min/max thực tế từ dữ liệu đang hiển thị
+        actual_min = float(sub["Hardness_LINE"].min())
+        actual_max = float(sub["Hardness_LINE"].max())
+        
+        # Thiết lập giá trị mặc định linh hoạt thay vì con số 58 và 65 cố định
+        mn = c1.number_input("Min HRB", value=actual_min, step=0.5, key=f"lk1_{uuid.uuid4()}")
+        mx = c2.number_input("Max HRB", value=actual_max, step=0.5, key=f"lk2_{uuid.uuid4()}")
+        
         filt = sub[(sub["Hardness_LINE"]>=mn) & (sub["Hardness_LINE"]<=mx)].dropna(subset=["TS","YS","EL"])
         st.success(f"Found {len(filt)} coils.")
-        if not filt.empty: st.dataframe(filt[["TS","YS","EL"]].describe().T)
+        
+        if not filt.empty: 
+            st.dataframe(filt[["TS","YS","EL"]].describe().T)
 
     # ================================
     # 6. REVERSE LOOKUP
