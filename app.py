@@ -524,49 +524,39 @@ for i, (_, g) in enumerate(valid.iterrows()):
         )
 # ==========================================================
    # ==========================================================
-    # 0. EXECUTIVE KPI DASHBOARD (TỔNG QUAN)
+   # ==========================================================
+    # 0. EXECUTIVE KPI DASHBOARD (OVERVIEW)
     # ==========================================================
     elif view_mode == "📊 Executive KPI Dashboard":
         
-        # CHỈ RENDER 1 LẦN DUY NHẤT (Ở vòng lặp đầu tiên)
+        # ONLY RENDER ONCE (At the first iteration)
         if i == 0:
-            st.markdown("## 📊 Executive KPI Dashboard (Tổng quan Chất lượng Toàn cục)")
+            st.markdown("## 📊 Executive KPI Dashboard (Overall Quality Overview)")
             
-            # --- BƯỚC BẢO VỆ DỮ LIỆU ---
-            # Trích xuất danh sách các DataFrame từ valid
-            dfs_to_concat = [s for _, s in valid.iterrows()]  # SỬA LẠI Ở ĐÂY
+            # --- DATA EXTRACTOR ---
+            extracted_dfs = []
+            for _, grp in valid.iterrows():
+                sub_df = df[
+                    (df["Rolling_Type"] == grp["Rolling_Type"]) &
+                    (df["Metallic_Type"] == grp["Metallic_Type"]) &
+                    (df["Quality_Group"] == grp["Quality_Group"]) &
+                    (df["Gauge_Range"] == grp["Gauge_Range"]) &
+                    (df["Material"] == grp["Material"])
+                ]
+                extracted_dfs.append(sub_df)
             
-            # Kiểm tra xem danh sách có bị rỗng (do đang chọn nhầm bộ lọc) không
-            if len(dfs_to_concat) == 0:
-                st.warning("⚠️ Không có dữ liệu nào phù hợp với bộ lọc hiện tại. Vui lòng nới lỏng Filter bên thanh điều hướng.")
+            if len(extracted_dfs) == 0:
+                st.warning("⚠️ No data matches the current filter. Please adjust the sidebar filters.")
             else:
-                # 1. GOM TOÀN BỘ DỮ LIỆU TỪ TẤT CẢ CÁC NHÓM (Lúc này đã an toàn 100%)
-                
-                # --- PHẢI THỰC HIỆN LỌC LẠI DỮ LIỆU GỐC THEO GROUP --- 
-                # Do biến 'valid' chỉ chứa thông tin nhóm (Quality, Material, Gauge...), 
-                # không chứa dữ liệu thật (Hardness_LINE, TS, YS, EL), ta phải trích xuất lại từ df gốc.
-                
-                extracted_dfs = []
-                for _, grp in valid.iterrows():
-                    sub_df = df[
-                        (df["Rolling_Type"] == grp["Rolling_Type"]) &
-                        (df["Metallic_Type"] == grp["Metallic_Type"]) &
-                        (df["Quality_Group"] == grp["Quality_Group"]) &
-                        (df["Gauge_Range"] == grp["Gauge_Range"]) &
-                        (df["Material"] == grp["Material"])
-                    ]
-                    extracted_dfs.append(sub_df)
-                
                 full_df = pd.concat(extracted_dfs)
-                
                 df_kpi = full_df.dropna(subset=['TS', 'YS', 'EL']).copy()
                 
                 if df_kpi.empty:
-                    st.warning("⚠️ Các cuộn thép trong bộ lọc này không có đủ dữ liệu Cơ tính (TS, YS, EL) để vẽ KPI.")
+                    st.warning("⚠️ The coils in this filter lack sufficient Mechanical Properties data (TS, YS, EL) to generate KPIs.")
                 else:
                     total_coils = len(df_kpi)
                     
-                    # 2. TÍNH TOÁN TỶ LỆ ĐẠT (PASS RATE) CHÍNH XÁC
+                    # 2. CALCULATE PRECISE PASS RATE
                     def check_pass(val, min_col, max_col):
                         s_min = df_kpi[min_col].fillna(0) if min_col in df_kpi.columns else 0
                         s_max = df_kpi[max_col].fillna(9999).replace(0, 9999) if max_col in df_kpi.columns else 9999
@@ -576,7 +566,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     df_kpi['YS_Pass'] = check_pass(df_kpi['YS'], 'Standard YS min', 'Standard YS max')
                     df_kpi['EL_Pass'] = df_kpi['EL'] >= (df_kpi['Standard EL min'].fillna(0) if 'Standard EL min' in df_kpi.columns else 0)
                     
-                    # Đạt tổng thể (Pass All)
+                    # Overall Pass
                     df_kpi['All_Pass'] = df_kpi['TS_Pass'] & df_kpi['YS_Pass'] & df_kpi['EL_Pass']
                     
                     yield_rate = df_kpi['All_Pass'].mean() * 100
@@ -584,8 +574,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     ys_yield = df_kpi['YS_Pass'].mean() * 100
                     el_yield = df_kpi['EL_Pass'].mean() * 100
                     
-                    # --- HIỂN THỊ CÁC CHỈ SỐ LỚN (BIG METRICS) ---
-                    st.markdown("### 🏆 Chỉ số Chất lượng Toàn cục (Overall Metrics)")
+                    # --- BIG METRICS DISPLAY ---
+                    st.markdown("### 🏆 Overall Quality Metrics")
                     col1, col2, col3, col4 = st.columns(4)
                     col1.metric("📦 Total Coils Tested", f"{total_coils:,}")
                     
@@ -596,13 +586,17 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     
                     st.markdown("---")
                     
-                    # --- 3. BẢNG "DANH SÁCH ĐEN" (HIGH-RISK WATCHLIST) ---
-                    st.markdown("### ⚠️ Cảnh báo Rủi ro (High-Risk Specs Watchlist)")
-                    st.caption("Danh sách Top các mã tiêu chuẩn có tỷ lệ đạt cơ tính thấp nhất hoặc biến động độ cứng lớn, cần ưu tiên rà soát.")
+                    # --- 3. HIGH-RISK WATCHLIST (THÊM CỘT QUALITY, MATERIAL, GAUGE) ---
+                    st.markdown("### ⚠️ High-Risk Specs Watchlist")
+                    st.caption("Top list of standard codes with the lowest mechanical pass rates or highest hardness volatility, requiring priority review.")
                     
                     col_spec = "Product_Spec" if "Product_Spec" in df_kpi.columns else "Rule_Name"
                     
-                    risk_summary = df_kpi.groupby(col_spec).agg(
+                    # Bổ sung các cột phân loại vào nhóm groupby
+                    group_cols = [col_spec, "Quality_Group", "Material", "Gauge_Range"]
+                    valid_group_cols = [c for c in group_cols if c in df_kpi.columns]
+                    
+                    risk_summary = df_kpi.groupby(valid_group_cols).agg(
                         Total_Coils=('COIL_NO', 'count'),
                         Pass_Coils=('All_Pass', 'sum'),
                         Hardness_Mean=('Hardness_LINE', 'mean'),
@@ -613,12 +607,22 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     risk_top = risk_summary[risk_summary['Total_Coils'] >= 3].sort_values('Yield Rate (%)').head(10)
                     
                     if not risk_top.empty:
-                        risk_top = risk_top.rename(columns={
+                        # Đổi tên cột sang tiếng Anh
+                        rename_dict = {
                             col_spec: "Specification",
+                            "Quality_Group": "Quality",
+                            "Material": "Material",
+                            "Gauge_Range": "Gauge",
                             "Total_Coils": "Tested Coils",
                             "Hardness_Mean": "Avg Hardness",
                             "Hardness_Std": "Hardness Std Dev"
-                        })
+                        }
+                        risk_top = risk_top.rename(columns=rename_dict)
+                        
+                        # Sắp xếp lại thứ tự cột cho hợp lý: Specs -> Phân loại -> Thống kê
+                        cols_order = ["Specification", "Quality", "Material", "Gauge", "Tested Coils", "Yield Rate (%)", "Avg Hardness", "Hardness Std Dev"]
+                        cols_order = [c for c in cols_order if c in risk_top.columns]
+                        risk_top = risk_top[cols_order]
                         
                         def style_risk(val):
                             if isinstance(val, (int, float)) and val < 100:
@@ -644,7 +648,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                         )
                         st.dataframe(styled_risk, use_container_width=True, hide_index=True)
                     else:
-                        st.success("🎉 Tuyệt vời! Tất cả các mã hàng đều ổn định và không có rủi ro đáng kể.")
+                        st.success("🎉 Excellent! All products are stable with no significant risks.")
     # ================================
     # 2. HARDNESS ANALYSIS
     # ================================
