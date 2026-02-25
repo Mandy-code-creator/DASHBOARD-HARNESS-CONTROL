@@ -1351,13 +1351,26 @@ for i, (_, g) in enumerate(valid.iterrows()):
             c2.metric("Yield Strength (YS)", f"{int(round(preds['YS']))} MPa", f"{get_delta(preds['YS'], last_ys)} vs Last")
             c3.metric("Elongation (EL)", f"{round(preds['EL'], 1)} %", f"{get_delta(preds['EL'], last_el)} vs Last")
     # ================================
-  # # 8. CONTROL LIMIT CALCULATOR
-    # ================================
+  # ==============================================================================
+    # 8. CONTROL LIMIT CALCULATOR (COMPARE 4 METHODS) - FULL VIEW CODE
+    # ==============================================================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
         
         # --- 1. KHỞI TẠO DANH SÁCH TỔNG HỢP Ở VÒNG LẶP ĐẦU TIÊN ---
         if i == 0:
             all_groups_summary = []
+
+        # --- 2. PHẦN GIẢI THÍCH PHƯƠNG PHÁP (TIẾNG TRUNG PHỒN THỂ) ---
+        st.markdown("### 📘 管制界限計算方法說明 (Method Explanation)")
+        with st.expander("🔍 點擊查看方法差異 (Click to view method details)", expanded=True):
+            st.markdown("""
+            | 方法 (Method) | 名稱 (Name) | 運作原理 (Description) |
+            | :--- | :--- | :--- |
+            | **M1: Standard** | **標準統計法** | 基於全體數據計算。若存在極端異常值，界限容易被過度拉伸。 |
+            | **M2: IQR Robust** | **抗干擾濾波法** | 自動剔除因操作失誤產生的「極端值」，使管制界限更符合實際規律。 |
+            | **M3: Smart Hybrid** | **智能混合法** | 結合統計趨勢與客戶規範 (Spec)，確保管制區間始終在安全範圍內。 |
+            | **M4: I-MR (SPC)** | **專業製程管制** | **最佳化方案：** 觀測相鄰鋼捲間的波動，是判斷製程是否「穩定」最科學的方法。 |
+            """)
 
         st.markdown(f"### 🎛️ Control Limits Analysis: {g['Material']} | {g['Gauge_Range']}")
         data = sub["Hardness_LINE"].dropna()
@@ -1411,7 +1424,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             else:
                 spec_str = f"{spec_min:.0f} ~ {display_max:.0f}"
 
-            # --- 2. XỬ LÝ CHUỖI TIÊU CHUẨN (SPECS) ---
+            # --- XỬ LÝ CHUỖI TIÊU CHUẨN (SPECS) ---
             col_spec = "Product_Spec"
             if col_spec in sub.columns:
                 unique_specs = sub[col_spec].dropna().unique()
@@ -1421,7 +1434,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
             # --- LƯU DỮ LIỆU VÀO DANH SÁCH TỔNG HỢP ---
             all_groups_summary.append({
-                "Specification List": specs_val, # <--- ĐÃ ĐỔI TỪ QUALITY SANG SPEC LIST
+                "Specification List": specs_val,
                 "Material": g["Material"],
                 "Gauge": g["Gauge_Range"],
                 "N": len(data),
@@ -1434,7 +1447,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 "Status": "✅ Stable" if (display_max > 0 and m4_max <= display_max) else "⚠️ Narrow Spec"
             })
 
-            # --- PHẦN VẼ BIỂU ĐỒ (GIỮ NGUYÊN THIẾT KẾ CỦA BẠN) ---
+            # --- PHẦN VẼ BIỂU ĐỒ ---
             col_chart, col_table = st.columns([2, 1])
             with col_chart:
                 fig, ax = plt.subplots(figsize=(10, 5))
@@ -1463,7 +1476,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
         if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
             st.markdown("---")
             st.markdown(f"## 📊 Summary of Control Limits for {qgroup}")
-            
             df_total = pd.DataFrame(all_groups_summary)
             
             def style_status(val):
@@ -1475,8 +1487,5 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 .applymap(style_status, subset=['Status'])
                 .set_properties(**{'background-color': '#e6f2ff', 'color': '#004085', 'font-weight': 'bold', 'border': '2px solid #0056b3'}, subset=['M4: I-MR (Optimal)'])
             )
-
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
-            
-            # Export CSV (Hỗ trợ tiếng Việt cho Specs)
             st.download_button("📥 Export Summary CSV", df_total.to_csv(index=False).encode('utf-8-sig'), f"SPC_Summary_{str(qgroup).replace(' ','')}.csv")
