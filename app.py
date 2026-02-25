@@ -479,7 +479,6 @@ if view_mode == "🚀 Global Summary Dashboard":
     st.stop()
  # ==============================================================================
 # ==============================================================================
-# ==============================================================================
 # 0. EXECUTIVE KPI DASHBOARD (OVERVIEW) - ĐẶT NGOÀI VÒNG LẶP CHÍNH
 # ==============================================================================
 if view_mode == "📊 Executive KPI Dashboard":
@@ -508,6 +507,14 @@ if view_mode == "📊 Executive KPI Dashboard":
         else:
             total_coils = len(df_kpi)
             
+            # --- HÀM TỐI ƯU HIỂN THỊ SỐ (Xóa .00 vô nghĩa) ---
+            def clean_num(val, is_pct=False):
+                if pd.isna(val): return "0%" if is_pct else "0"
+                v = round(float(val), 2)
+                # Nếu là số nguyên (ví dụ 100.0), chuyển thành '100'. Nếu có lẻ (95.5), giữ nguyên '95.5'
+                res = str(int(v)) if v.is_integer() else str(v)
+                return f"{res}%" if is_pct else res
+
             # 2. CALCULATE PRECISE PASS RATE (MECH PROPS & HARDNESS)
             def check_pass(val, min_col, max_col):
                 s_min = df_kpi[min_col].fillna(0) if min_col in df_kpi.columns else 0
@@ -529,21 +536,21 @@ if view_mode == "📊 Executive KPI Dashboard":
             ys_yield = df_kpi['YS_Pass'].mean() * 100
             el_yield = df_kpi['EL_Pass'].mean() * 100
             
-            # --- BIG METRICS DISPLAY (ĐÃ CẬP NHẬT 2 SỐ THẬP PHÂN) ---
+            # --- BIG METRICS DISPLAY ---
             st.markdown("### 🏆 Overall Quality Metrics")
             col1, col2, col3, col4, col5, col6 = st.columns(6)
             
             col1.metric("📦 Total Coils Tested", f"{total_coils:,}")
             
-            delta_mech = f"{yield_rate - 100:.2f}%" if yield_rate < 100 else "Perfect"
-            col2.metric("✅ Mech Yield Rate", f"{yield_rate:.2f}%", delta_mech, delta_color="normal" if yield_rate == 100 else "inverse")
+            delta_mech = clean_num(yield_rate - 100, True) if yield_rate < 100 else "Perfect"
+            col2.metric("✅ Mech Yield Rate", clean_num(yield_rate, True), delta_mech, delta_color="normal" if yield_rate == 100 else "inverse")
             
-            delta_hrb = f"{hrb_yield - 100:.2f}%" if hrb_yield < 100 else "In Control"
-            col3.metric("🎯 HRB Pass Rate", f"{hrb_yield:.2f}%", delta_hrb, delta_color="normal" if hrb_yield == 100 else "inverse")
+            delta_hrb = clean_num(hrb_yield - 100, True) if hrb_yield < 100 else "In Control"
+            col3.metric("🎯 HRB Pass Rate", clean_num(hrb_yield, True), delta_hrb, delta_color="normal" if hrb_yield == 100 else "inverse")
             
-            col4.metric("TS Pass", f"{ts_yield:.2f}%")
-            col5.metric("YS Pass", f"{ys_yield:.2f}%")
-            col6.metric("EL Pass", f"{el_yield:.2f}%")
+            col4.metric("TS Pass", clean_num(ts_yield, True))
+            col5.metric("YS Pass", clean_num(ys_yield, True))
+            col6.metric("EL Pass", clean_num(el_yield, True))
             
             st.markdown("---")
             
@@ -564,9 +571,8 @@ if view_mode == "📊 Executive KPI Dashboard":
                 Hardness_Std=('Hardness_LINE', 'std')
             ).reset_index()
             
-            # Đã cập nhật round(2)
-            risk_summary['Mech Yield (%)'] = (risk_summary['Mech_Pass_Coils'] / risk_summary['Total_Coils'] * 100).round(2)
-            risk_summary['HRB Yield (%)'] = (risk_summary['HRB_Pass_Coils'] / risk_summary['Total_Coils'] * 100).round(2)
+            risk_summary['Mech Yield (%)'] = (risk_summary['Mech_Pass_Coils'] / risk_summary['Total_Coils'] * 100)
+            risk_summary['HRB Yield (%)'] = (risk_summary['HRB_Pass_Coils'] / risk_summary['Total_Coils'] * 100)
             
             risk_top = risk_summary[risk_summary['Total_Coils'] >= 3].sort_values(['Mech Yield (%)', 'HRB Yield (%)']).head(10)
             
@@ -586,36 +592,39 @@ if view_mode == "📊 Executive KPI Dashboard":
                 cols_order = [c for c in cols_order if c in risk_top.columns]
                 risk_top = risk_top[cols_order]
                 
+                # Áp dụng hàm tối ưu hiển thị số (Xóa .00) cho từng cột
+                risk_top['Mech Yield (%)'] = risk_top['Mech Yield (%)'].apply(lambda x: clean_num(x, True))
+                risk_top['HRB Yield (%)'] = risk_top['HRB Yield (%)'].apply(lambda x: clean_num(x, True))
+                risk_top['Avg Hardness'] = risk_top['Avg Hardness'].apply(lambda x: clean_num(x))
+                risk_top['Hardness Std Dev'] = risk_top['Hardness Std Dev'].apply(lambda x: clean_num(x))
+                
                 def style_risk(val):
-                    if isinstance(val, (int, float)) and val < 100:
-                        return 'color: #d32f2f; font-weight: bold; background-color: #ffebee'
-                    elif isinstance(val, (int, float)) and val == 100:
-                        return 'color: #388e3c; font-weight: bold'
+                    try:
+                        num = float(str(val).replace('%', '').strip())
+                        if num < 100: return 'color: #d32f2f; font-weight: bold; background-color: #ffebee'
+                        if num >= 100: return 'color: #388e3c; font-weight: bold'
+                    except:
+                        pass
                     return ''
                 
                 def style_std(val):
-                    if isinstance(val, (int, float)) and val > 5.0:
-                        return 'color: #f57c00; font-weight: bold'
+                    try:
+                        num = float(str(val).strip())
+                        if num > 5.0: return 'color: #f57c00; font-weight: bold'
+                    except:
+                        pass
                     return ''
 
-                # Đã cập nhật format .2f cho toàn bộ bảng
                 styled_risk = (
                     risk_top.style
                     .map(style_risk, subset=['Mech Yield (%)', 'HRB Yield (%)']) if hasattr(risk_top.style, "map") else risk_top.style.applymap(style_risk, subset=['Mech Yield (%)', 'HRB Yield (%)'])
                     .map(style_std, subset=['Hardness Std Dev']) if hasattr(risk_top.style, "map") else risk_top.style.applymap(style_std, subset=['Hardness Std Dev'])
-                    .format({
-                        "Mech Yield (%)": "{:.2f}%",
-                        "HRB Yield (%)": "{:.2f}%",
-                        "Avg Hardness": "{:.2f}",
-                        "Hardness Std Dev": "{:.2f}"
-                    })
                 )
                 st.dataframe(styled_risk, use_container_width=True, hide_index=True)
             else:
                 st.success("🎉 Excellent! All products are stable with no significant risks.")
     
     st.stop()
-
 # ==============================================================================
 # ==============================================================================
 # MAIN LOOP (DETAILS)
