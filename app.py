@@ -541,7 +541,7 @@ if view_mode == "📊 Executive KPI Dashboard":
                     # Bổ sung thẻ hiển thị cho EL ở cột thứ 5
                     col5.metric("🎯 EL Pass Rate", f"{el_yield:.1f}%") 
                     
-                    st.markdown("---")
+            st.markdown("---")
             
             # --- 3. HIGH-RISK WATCHLIST ---
             st.markdown("### ⚠️ High-Risk Specs Watchlist")
