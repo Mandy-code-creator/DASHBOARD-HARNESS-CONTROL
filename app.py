@@ -1352,26 +1352,27 @@ for i, (_, g) in enumerate(valid.iterrows()):
             c3.metric("Elongation (EL)", f"{round(preds['EL'], 1)} %", f"{get_delta(preds['EL'], last_el)} vs Last")
     # ================================
   # ==============================================================================
-    # 8. CONTROL LIMIT CALCULATOR (COMPARE 4 METHODS) - FULL VIEW CODE
+# ==============================================================================
+    # 8. CONTROL LIMIT CALCULATOR (COMPARE 4 METHODS) - FINAL OPTIMIZED
     # ==============================================================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
         
-        # --- 1. KHỞI TẠO DANH SÁCH TỔNG HỢP Ở VÒNG LẶP ĐẦU TIÊN ---
+        # --- 1. HIỂN THỊ GIẢI THÍCH DUY NHẤT MỘT LẦN Ở ĐẦU VIEW ---
         if i == 0:
-            all_groups_summary = []
+            all_groups_summary = [] # Khởi tạo danh sách tổng hợp cho toàn bộ báo cáo
+            
+            st.markdown("### 📘 管制界限計算方法說明 (Method Explanation)")
+            with st.expander("🔍 點擊查看方法差異 (Click to view method details)", expanded=True):
+                st.markdown("""
+                | 方法 (Method) | 名稱 (Name) | 運作原理 (Description) |
+                | :--- | :--- | :--- |
+                | **M1: Standard** | **標準統計法** | 基於全體數據計算。若存在極端異常值，界限容易被過度拉伸。 |
+                | **M2: IQR Robust** | **抗干擾濾波法** | 自動剔除因操作失誤產生的「極端值」，使管制界限更符合實際規律。 |
+                | **M3: Smart Hybrid** | **智能混合法** | 結合統計趨勢與客戶規範 (Spec)，確保管制區間始終在安全範圍內。 |
+                | **M4: I-MR (SPC)** | **專業製程管制** | **最佳化方案：** 觀測相鄰鋼捲間的波動，是判斷製程是否「穩定」最科學的方法。 |
+                """)
 
-        # --- 2. PHẦN GIẢI THÍCH PHƯƠNG PHÁP (TIẾNG TRUNG PHỒN THỂ) ---
-        st.markdown("### 📘 管制界限計算方法說明 (Method Explanation)")
-        with st.expander("🔍 點擊查看方法差異 (Click to view method details)", expanded=True):
-            st.markdown("""
-            | 方法 (Method) | 名稱 (Name) | 運作原理 (Description) |
-            | :--- | :--- | :--- |
-            | **M1: Standard** | **標準統計法** | 基於全體數據計算。若存在極端異常值，界限容易被過度拉伸。 |
-            | **M2: IQR Robust** | **抗干擾濾波法** | 自動剔除因操作失誤產生的「極端值」，使管制界限更符合實際規律。 |
-            | **M3: Smart Hybrid** | **智能混合法** | 結合統計趨勢與客戶規範 (Spec)，確保管制區間始終在安全範圍內。 |
-            | **M4: I-MR (SPC)** | **專業製程管制** | **最佳化方案：** 觀測相鄰鋼捲間的波動，是判斷製程是否「穩定」最科學的方法。 |
-            """)
-
+        # --- 2. PHÂN TÍCH CHI TIẾT CHO TỪNG NHÓM (MATERIAL | GAUGE) ---
         st.markdown(f"### 🎛️ Control Limits Analysis: {g['Material']} | {g['Gauge_Range']}")
         data = sub["Hardness_LINE"].dropna()
         data_lab = sub["Hardness_LAB"].dropna()
@@ -1384,15 +1385,10 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 sigma_n = c1.number_input("1. Sigma Multiplier (K)", 1.0, 6.0, 3.0, 0.5, key=f"sig_{i}")
                 iqr_k = c2.number_input("2. IQR Sensitivity", 0.5, 3.0, 0.7, 0.1, key=f"iqr_{i}")
 
-            # --- LẤY GIỚI HẠN CONTROL VÀ LAB ---
+            # --- LẤY GIỚI HẠN HIỆN TẠI (CONTROL & LAB) ---
             spec_min = sub["Limit_Min"].max(); spec_max = sub["Limit_Max"].min()
             lab_min = sub["Lab_Min"].max(); lab_max = sub["Lab_Max"].min()
             rule_name = sub["Rule_Name"].iloc[0] 
-            
-            if pd.isna(spec_min): spec_min = 0
-            if pd.isna(spec_max): spec_max = 0
-            if pd.isna(lab_min): lab_min = 0
-            if pd.isna(lab_max): lab_max = 0
             
             display_max = spec_max if (spec_max > 0 and spec_max < 9000) else 0
             display_lab_max = lab_max if (lab_max > 0 and lab_max < 9000) else 0
@@ -1414,25 +1410,19 @@ for i, (_, g) in enumerate(valid.iterrows()):
             m3_max = min(m2_max, spec_max) if (spec_max > 0 and spec_max < 9000) else m2_max
             if m3_min >= m3_max: m3_min, m3_max = m2_min, m2_max
             
-            # M4: I-MR (SPC)
+            # M4: I-MR (SPC) - PHƯƠNG PHÁP TỐI ƯU CHO THÉP CUỘN
             mrs = np.abs(np.diff(data)); mr_bar = np.mean(mrs); sigma_imr = mr_bar / 1.128
             m4_min, m4_max = mu - sigma_n * sigma_imr, mu + sigma_n * sigma_imr
 
-            # --- TẠO CHUỖI HIỂN THỊ CHO CỘT SPEC ---
-            if display_lab_max > 0:
-                spec_str = f"Ctrl: {spec_min:.0f}~{display_max:.0f} | Lab: {lab_min:.0f}~{display_lab_max:.0f}"
-            else:
-                spec_str = f"{spec_min:.0f} ~ {display_max:.0f}"
+            # --- CHUẨN BỊ DỮ LIỆU HIỂN THỊ ---
+            spec_str = f"Ctrl: {spec_min:.0f}~{display_max:.0f}"
+            if display_lab_max > 0: spec_str += f" | Lab: {lab_min:.0f}~{display_lab_max:.0f}"
 
-            # --- XỬ LÝ CHUỖI TIÊU CHUẨN (SPECS) ---
             col_spec = "Product_Spec"
-            if col_spec in sub.columns:
-                unique_specs = sub[col_spec].dropna().unique()
-                specs_val = f"Specs: {', '.join(str(x) for x in unique_specs)}" if len(unique_specs) > 0 else "Specs: N/A"
-            else:
-                specs_val = "Specs: N/A"
+            unique_specs = sub[col_spec].dropna().unique() if col_spec in sub.columns else []
+            specs_val = f"Specs: {', '.join(str(x) for x in unique_specs)}" if len(unique_specs) > 0 else "Specs: N/A"
 
-            # --- LƯU DỮ LIỆU VÀO DANH SÁCH TỔNG HỢP ---
+            # --- LƯU VÀO DANH SÁCH TỔNG HỢP ---
             all_groups_summary.append({
                 "Specification List": specs_val,
                 "Material": g["Material"],
@@ -1447,15 +1437,18 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 "Status": "✅ Stable" if (display_max > 0 and m4_max <= display_max) else "⚠️ Narrow Spec"
             })
 
-            # --- PHẦN VẼ BIỂU ĐỒ ---
+            # --- VẼ BIỂU ĐỒ SO SÁNH ---
             col_chart, col_table = st.columns([2, 1])
             with col_chart:
                 fig, ax = plt.subplots(figsize=(10, 5))
                 ax.hist(data, bins=30, density=True, alpha=0.6, color="#1f77b4", label="LINE (Production)")
                 if not data_lab.empty: ax.hist(data_lab, bins=30, density=True, alpha=0.4, color="#ff7f0e", label="LAB (Ref)")
-                ax.axvline(m1_min, c="red", ls=":", alpha=0.4); ax.axvline(m1_max, c="red", ls=":", alpha=0.4, label="M1: Standard")
-                ax.axvline(m2_min, c="blue", ls="--", alpha=0.5); ax.axvline(m2_max, c="blue", ls="--", alpha=0.5, label="M2: IQR")
-                ax.axvline(m4_min, c="purple", ls="-.", lw=2); ax.axvline(m4_max, c="purple", ls="-.", lw=2, label="M4: I-MR (SPC)")
+                ax.axvline(m1_min, c="red", ls=":", alpha=0.4, label="M1: Standard")
+                ax.axvline(m1_max, c="red", ls=":", alpha=0.4)
+                ax.axvline(m2_min, c="blue", ls="--", alpha=0.5, label="M2: IQR")
+                ax.axvline(m2_max, c="blue", ls="--", alpha=0.5)
+                ax.axvline(m4_min, c="purple", ls="-.", lw=2, label="M4: I-MR (SPC)")
+                ax.axvline(m4_max, c="purple", ls="-.", lw=2)
                 ax.axvspan(m3_min, m3_max, color="green", alpha=0.15, label="M3: Hybrid Zone")
                 if spec_min > 0: ax.axvline(spec_min, c="black", lw=2)
                 if display_max > 0: ax.axvline(display_max, c="black", lw=2)
@@ -1463,24 +1456,22 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 ax.legend(loc="upper right", fontsize="small"); st.pyplot(fig)
 
             with col_table:
-                comp_data = [
-                    {"Method": "0. Spec (Rule)", "Min": spec_min, "Max": display_max, "Range": display_max-spec_min if display_max>0 else 0, "Note": rule_name},
-                    {"Method": "1. Standard", "Min": m1_min, "Max": m1_max, "Range": m1_max-m1_min, "Note": "Basic Stats"},
-                    {"Method": "2. IQR Robust", "Min": m2_min, "Max": m2_max, "Range": m2_max-m2_min, "Note": "Filtered"},
-                    {"Method": "3. Smart Hybrid", "Min": m3_min, "Max": m3_max, "Range": m3_max-m3_min, "Note": "Configurable"},
-                    {"Method": "4. I-MR (SPC)", "Min": m4_min, "Max": m4_max, "Range": m4_max-m4_min, "Note": "✅ Professional"}
-                ]
-                st.dataframe(pd.DataFrame(comp_data).style.format("{:.1f}", subset=["Min", "Max", "Range"]), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame([
+                    {"Method": "0. Spec", "Min": spec_min, "Max": display_max},
+                    {"Method": "1. Standard", "Min": m1_min, "Max": m1_max},
+                    {"Method": "2. IQR", "Min": m2_min, "Max": m2_max},
+                    {"Method": "3. Hybrid", "Min": m3_min, "Max": m3_max},
+                    {"Method": "4. I-MR", "Min": m4_min, "Max": m4_max}
+                ]).style.format("{:.1f}", subset=["Min", "Max"]), use_container_width=True, hide_index=True)
 
-        # --- HIỂN THỊ BẢNG TỔNG HỢP Ở VÒNG LẶP CUỐI CÙNG ---
+        # --- HIỂN THỊ BẢNG TỔNG HỢP TOÀN BỘ Ở CUỐI TRANG ---
         if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
             st.markdown("---")
             st.markdown(f"## 📊 Summary of Control Limits for {qgroup}")
             df_total = pd.DataFrame(all_groups_summary)
             
             def style_status(val):
-                color = 'red' if 'Narrow' in val else 'green'
-                return f'color: {color}; font-weight: bold'
+                return 'color: red; font-weight: bold' if 'Narrow' in val else 'color: green; font-weight: bold'
 
             styled_df = (
                 df_total.style
