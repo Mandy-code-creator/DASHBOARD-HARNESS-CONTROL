@@ -478,12 +478,12 @@ if view_mode == "🚀 Global Summary Dashboard":
     st.stop()
  # ==============================================================================
 # ==============================================================================
-# 0. EXECUTIVE KPI DASHBOARD (OVERVIEW) - STANDALONE BLOCK
+# 0. EXECUTIVE KPI DASHBOARD - FINAL VERSION (TOP 5 RISKS & DUAL LIMITS)
 # ==============================================================================
 if view_mode == "📊 Executive KPI Dashboard":
     st.markdown("## 📊 Executive KPI Dashboard (Overall Quality Overview)")
     
-    # --- DATA EXTRACTOR ---
+    # --- 1. TRÍCH XUẤT DỮ LIỆU TỪ CÁC NHÓM HỢP LỆ ---
     extracted_dfs = []
     for _, grp in valid.iterrows():
         sub_df = df[
@@ -499,219 +499,104 @@ if view_mode == "📊 Executive KPI Dashboard":
         st.warning("⚠️ No data matches the current filter. Please adjust the sidebar filters.")
     else:
         full_df = pd.concat(extracted_dfs)
+        # Loại bỏ các hàng thiếu dữ liệu quan trọng để tính KPI chính xác
         df_kpi = full_df.dropna(subset=['TS', 'YS', 'EL', 'Hardness_LINE']).copy()
         
         if df_kpi.empty:
             st.warning("⚠️ The coils in this filter lack sufficient data to generate KPIs.")
         else:
+            # --- 2. TÍNH TOÁN CÁC CHỈ SỐ KPI TỔNG QUÁT ---
             total_coils = len(df_kpi)
             
-            # --- HELPER FUNCTION: CLEAN NUMBERS ---
-            def clean_num(val, is_pct=False):
-                if pd.isna(val): return "0%" if is_pct else "0"
-                v = round(float(val), 2)
-                # Keep decimal only if it's not .00
-                res = str(int(v)) if v.is_integer() else str(v)
-                return f"{res}%" if is_pct else res
-
-            # --- 2. CALCULATE PRECISE PASS RATE ---
             def check_pass(val, min_col, max_col):
                 s_min = df_kpi[min_col].fillna(0) if min_col in df_kpi.columns else 0
                 s_max = df_kpi[max_col].fillna(9999).replace(0, 9999) if max_col in df_kpi.columns else 9999
                 return (val >= s_min) & (val <= s_max)
             
-            # Mechanical Evaluation
+            # Đánh giá đạt chuẩn cơ tính và độ cứng
             df_kpi['TS_Pass'] = check_pass(df_kpi['TS'], 'Standard TS min', 'Standard TS max')
             df_kpi['YS_Pass'] = check_pass(df_kpi['YS'], 'Standard YS min', 'Standard YS max')
             df_kpi['EL_Pass'] = df_kpi['EL'] >= (df_kpi['Standard EL min'].fillna(0) if 'Standard EL min' in df_kpi.columns else 0)
             df_kpi['All_Pass'] = df_kpi['TS_Pass'] & df_kpi['YS_Pass'] & df_kpi['EL_Pass']
-            
-            # Hardness Control Evaluation
             df_kpi['HRB_Pass'] = (df_kpi['Hardness_LINE'] >= df_kpi['Limit_Min']) & (df_kpi['Hardness_LINE'] <= df_kpi['Limit_Max'])
             
-            yield_rate = df_kpi['All_Pass'].mean() * 100
-            hrb_yield = df_kpi['HRB_Pass'].mean() * 100 
-            ts_yield = df_kpi['TS_Pass'].mean() * 100
-            ys_yield = df_kpi['YS_Pass'].mean() * 100
-            el_yield = df_kpi['EL_Pass'].mean() * 100
-            
-            # --- BIG METRICS DISPLAY ---
+            # Hiển thị thẻ chỉ số (Metrics)
             st.markdown("### 🏆 Overall Quality Metrics")
-            col1, col2, col3, col4, col5, col6 = st.columns(6)
-            
-            col1.metric("📦 Total Coils Tested", f"{total_coils:,}")
-            
-            delta_mech = clean_num(yield_rate - 100, True) if yield_rate < 100 else "Perfect"
-            col2.metric("✅ Mech Yield Rate", clean_num(yield_rate, True), delta_mech, delta_color="normal" if yield_rate == 100 else "inverse")
-            
-            delta_hrb = clean_num(hrb_yield - 100, True) if hrb_yield < 100 else "In Control"
-            col3.metric("🎯 HRB Yield Rate", clean_num(hrb_yield, True), delta_hrb, delta_color="normal" if hrb_yield == 100 else "inverse")
-            
-            col4.metric("TS Pass", clean_num(ts_yield, True))
-            col5.metric("YS Pass", clean_num(ys_yield, True))
-            col6.metric("EL Pass", clean_num(el_yield, True))
-            
+            m1, m2, m3 = st.columns(3)
+            m1.metric("📦 Total Coils Tested", f"{total_coils:,}")
+            m2.metric("✅ Mech Yield Rate", f"{df_kpi['All_Pass'].mean()*100:.1f}%")
+            m3.metric("🎯 HRB Yield Rate", f"{df_kpi['HRB_Pass'].mean()*100:.1f}%")
+
             st.markdown("---")
             
-            # --- 3. HIGH-RISK WATCHLIST & DIAGNOSTICS ---
-            st.markdown("### ⚠️ High-Risk Specs Watchlist")
-            st.caption("Top list of standard codes with the lowest mechanical pass rates or out-of-control hardness, requiring priority review.")
-            
+            # --- 3. XÁC ĐỊNH DANH SÁCH RỦI RO (TOP 5 SPECS) ---
             col_spec = "Product_Spec" if "Product_Spec" in df_kpi.columns else "Rule_Name"
-            
-            group_cols = [col_spec, "Quality_Group", "Material", "Gauge_Range"]
-            valid_group_cols = [c for c in group_cols if c in df_kpi.columns]
-            
-            risk_summary = df_kpi.groupby(valid_group_cols).agg(
-                Total_Coils=('COIL_NO', 'count'),
-                Mech_Pass_Coils=('All_Pass', 'sum'),
-                HRB_Pass_Coils=('HRB_Pass', 'sum'), 
-                Hardness_Mean=('Hardness_LINE', 'mean'),
-                Hardness_Std=('Hardness_LINE', 'std'),
-                LSL=('Limit_Min', 'first'),
-                USL=('Limit_Max', 'first')
+            risk_summary = df_kpi.groupby([col_spec, "Material", "Gauge_Range"]).agg(
+                Total_N=('COIL_NO', 'count'),
+                Mech_Yield=('All_Pass', 'mean'),
+                HRB_Yield=('HRB_Pass', 'mean')
             ).reset_index()
             
-            risk_summary['Mech Yield (%)'] = (risk_summary['Mech_Pass_Coils'] / risk_summary['Total_Coils'] * 100)
-            risk_summary['HRB Yield (%)'] = (risk_summary['HRB_Pass_Coils'] / risk_summary['Total_Coils'] * 100)
+            # Sắp xếp lấy 5 quy cách có tỷ lệ đạt thấp nhất
+            risk_top_5 = risk_summary.sort_values(['Mech_Yield', 'HRB_Yield']).head(5)
             
-            # --- AI DIAGNOSTIC LOGIC ---
-            def diagnose_cause(row):
-                if row['HRB Yield (%)'] >= 100: return "-"
-                cause = []
-                if pd.notna(row['Hardness_Std']) and row['Hardness_Std'] > 3.0: 
-                    cause.append("High Volatility")
-                if row['Hardness_Mean'] <= row['LSL'] + 1.5: 
-                    cause.append("Mean Too Low")
-                if row['USL'] < 9000 and row['Hardness_Mean'] >= row['USL'] - 1.5: 
-                    cause.append("Mean Too High")
-                
-                if not cause: cause.append("Narrow Spec Limit")
-                return " + ".join(cause)
+            st.markdown("### ⚠️ Top 5 High-Risk Specs Watchlist")
+            st.dataframe(risk_top_5.style.format("{:.1f}%", subset=['Mech_Yield', 'HRB_Yield']), use_container_width=True, hide_index=True)
 
-            def recommend_action(row):
-                if row['HRB Yield (%)'] >= 100: return "✅ Maintain Process"
-                cause = row['Root Cause']
-                if "High Volatility" in cause: return "🔍 Check Furnace/Skin-pass"
-                if "Mean Too Low" in cause: return "⚙️ Dec. Skin-pass / Inc. Temp"
-                if "Mean Too High" in cause: return "⚙️ Inc. Skin-pass / Dec. Temp"
-                return "📋 Review Spec Feasibility"
-
-            risk_summary['Root Cause'] = risk_summary.apply(diagnose_cause, axis=1)
-            risk_summary['Action Plan'] = risk_summary.apply(recommend_action, axis=1)
+            # ======================================================================
+            # 🔔 4. VISUAL DEEP DIVE: BIỂU ĐỒ PHÂN BỐ VỚI GIỚI HẠN KÉP (CONTROL & LAB)
+            # ======================================================================
+            st.markdown("#### 🔔 Visual Deep Dive: Top 5 Critical Distributions")
+            st.info("ℹ️ **Màu Đen (--):** Giới hạn sản xuất (Control) | **Màu Tím (:):** Giới hạn phòng Lab (Lab Spec)")
             
-            risk_top = risk_summary[risk_summary['Total_Coils'] >= 3].sort_values(['Mech Yield (%)', 'HRB Yield (%)']).head(10)
+            top_5_list = risk_top_5.to_dict('records')
+            cols = st.columns(3) # Hiển thị 3 biểu đồ mỗi hàng cho gọn
             
-            if not risk_top.empty:
-                rename_dict = {
-                    col_spec: "Specification",
-                    "Quality_Group": "Quality",
-                    "Material": "Material",
-                    "Gauge_Range": "Gauge",
-                    "Total_Coils": "Tested Coils",
-                    "Hardness_Mean": "Avg Hardness",
-                    "Hardness_Std": "Hardness Std Dev"
-                }
-                risk_top = risk_top.rename(columns=rename_dict)
+            for idx, risk_item in enumerate(top_5_list):
+                spec_name = risk_item[col_spec]
+                # Lọc dữ liệu riêng cho từng Spec trong Top 5
+                target_data = df_kpi[
+                    (df_kpi[col_spec] == spec_name) & 
+                    (df_kpi["Material"] == risk_item["Material"]) & 
+                    (df_kpi["Gauge_Range"] == risk_item["Gauge_Range"])
+                ]
                 
-                cols_order = ["Specification", "Quality", "Material", "Gauge", "Tested Coils", "Mech Yield (%)", "HRB Yield (%)", "Avg Hardness", "Hardness Std Dev", "Root Cause", "Action Plan"]
-                cols_order = [c for c in cols_order if c in risk_top.columns]
-                risk_top = risk_top[cols_order]
-                
-                risk_top['Mech Yield (%)'] = risk_top['Mech Yield (%)'].apply(lambda x: clean_num(x, True))
-                risk_top['HRB Yield (%)'] = risk_top['HRB Yield (%)'].apply(lambda x: clean_num(x, True))
-                risk_top['Avg Hardness'] = risk_top['Avg Hardness'].apply(lambda x: clean_num(x))
-                risk_top['Hardness Std Dev'] = risk_top['Hardness Std Dev'].apply(lambda x: clean_num(x))
-                
-                def style_risk(val):
-                    try:
-                        num = float(str(val).replace('%', '').strip())
-                        if num < 100: return 'color: #d32f2f; font-weight: bold; background-color: #ffebee'
-                        if num >= 100: return 'color: #388e3c; font-weight: bold'
-                    except:
-                        pass
-                    return ''
-                
-                def style_std(val):
-                    try:
-                        num = float(str(val).strip())
-                        if num > 3.0: return 'color: #f57c00; font-weight: bold'
-                    except:
-                        pass
-                    return ''
-                
-                def style_action(val):
-                    if "Check" in str(val): return 'color: #d32f2f; font-weight: bold'
-                    if "⚙️" in str(val): return 'color: #1976d2; font-weight: bold'
-                    if "✅" in str(val): return 'color: #388e3c'
-                    return ''
-
-                # Update style map for Pandas compatability
-                styled_risk = risk_top.style
-                if hasattr(styled_risk, "map"):
-                    styled_risk = (styled_risk
-                                   .map(style_risk, subset=['Mech Yield (%)', 'HRB Yield (%)'])
-                                   .map(style_std, subset=['Hardness Std Dev'])
-                                   .map(style_action, subset=['Action Plan']))
-                else:
-                    styled_risk = (styled_risk
-                                   .applymap(style_risk, subset=['Mech Yield (%)', 'HRB Yield (%)'])
-                                   .applymap(style_std, subset=['Hardness Std Dev'])
-                                   .applymap(style_action, subset=['Action Plan']))
-                
-                # Render Table
-                st.dataframe(styled_risk, use_container_width=True, hide_index=True)
-                
-                # ==========================================
-                # 4. VISUAL DEEP DIVE (HISTOGRAMS)
-                # ==========================================
-                st.markdown("#### 🔔 Visual Deep Dive: Top Risk Distributions")
-                st.caption("Visualizing the 'bell curve' of the top 2 most critical specifications to expose control limit breaches.")
-                
-                top_2_risks = risk_top.head(2).to_dict('records')
-                chart_cols = st.columns(len(top_2_risks))
-                
-                for idx, risk_item in enumerate(top_2_risks):
-                    spec_name = risk_item["Specification"]
-                    mat_name = risk_item["Material"]
-                    gauge_val = risk_item["Gauge"]
+                if not target_data.empty:
+                    fig, ax = plt.subplots(figsize=(6, 4))
+                    hard_data = target_data["Hardness_LINE"].dropna()
                     
-                    target_data = df_kpi[
-                        (df_kpi[col_spec] == spec_name) & 
-                        (df_kpi["Material"] == mat_name) & 
-                        (df_kpi["Gauge_Range"] == gauge_val)
-                    ]
+                    # Vẽ Histogram & Đường cong Bell Curve
+                    ax.hist(hard_data, bins=15, color="#ff9999", edgecolor="white", density=True, alpha=0.6)
+                    mu, std = hard_data.mean(), hard_data.std()
+                    if std > 0:
+                        x_range = np.linspace(hard_data.min()-10, hard_data.max()+10, 100)
+                        ax.plot(x_range, (1/(std*np.sqrt(2*np.pi)))*np.exp(-0.5*((x_range-mu)/std)**2), color="#cc0000", lw=2)
                     
-                    if not target_data.empty:
-                        fig, ax = plt.subplots(figsize=(6, 4))
-                        hard_data = target_data["Hardness_LINE"].dropna()
-                        
-                        # Histogram
-                        ax.hist(hard_data, bins=15, color="#ff9999", edgecolor="white", density=True, alpha=0.8)
-                        
-                        # Bell Curve Fit
-                        mean_val = hard_data.mean()
-                        std_val = hard_data.std()
-                        if std_val > 0:
-                            x_axis = np.linspace(hard_data.min() - 2, hard_data.max() + 2, 100)
-                            y_axis = (1/(std_val * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_axis - mean_val) / std_val)**2)
-                            ax.plot(x_axis, y_axis, color="#cc0000", lw=2, label="Distribution Fit")
-                        
-                        # Control Limits
-                        l_min = target_data["Limit_Min"].iloc[0]
-                        l_max = target_data["Limit_Max"].iloc[0]
-                        
-                        ax.axvline(l_min, color="black", linestyle="--", lw=1.5, label=f"LSL ({l_min:.0f})")
-                        if l_max > 0 and l_max < 9000:
-                            ax.axvline(l_max, color="black", linestyle="--", lw=1.5, label=f"USL ({l_max:.0f})")
-                        
-                        ax.set_title(f"Spec: {spec_name}\nMaterial: {mat_name} | N={len(hard_data)}", fontsize=10, fontweight="bold")
-                        ax.set_xlabel("Hardness (HRB)", fontsize=9)
-                        ax.legend(fontsize=8, loc="upper right")
-                        ax.grid(alpha=0.3, linestyle=":")
-                        
-                        chart_cols[idx].pyplot(fig)
-                
+                    # Lấy các thông số giới hạn Applied (Ví dụ Rule A108-Gen)
+                    l_min = target_data["Limit_Min"].iloc[0] # Giới hạn Control thấp
+                    l_max = target_data["Limit_Max"].iloc[0] # Giới hạn Control cao
+                    lb_min = target_data["Lab_Min"].iloc[0]   # Giới hạn Lab thấp
+                    lb_max = target_data["Lab_Max"].iloc[0]   # Giới hạn Lab cao
+                    
+                    # --- VẼ GIỚI HẠN KIỂM SOÁT (CONTROL - MÀU ĐEN) ---
+                    if pd.notna(l_min) and l_min > 0:
+                        ax.axvline(l_min, color="black", linestyle="--", lw=2, label=f"Ctrl LSL: {l_min:.0f}")
+                    if pd.notna(l_max) and 0 < l_max < 9000:
+                        ax.axvline(l_max, color="black", linestyle="--", lw=2, label=f"Ctrl USL: {l_max:.0f}")
+                    
+                    # --- VẼ GIỚI HẠN PHÒNG LAB (LAB - MÀU TÍM) ---
+                    if pd.notna(lb_min) and lb_min > 0:
+                        ax.axvline(lb_min, color="purple", linestyle=":", lw=1.5, label=f"Lab LSL: {lb_min:.0f}")
+                    if pd.notna(lb_max) and 0 < lb_max < 9000:
+                        ax.axvline(lb_max, color="purple", linestyle=":", lw=1.5, label=f"Lab USL: {lb_max:.0f}")
+                    
+                    ax.set_title(f"TOP {idx+1}: {spec_name}\n({target_data['Rule_Name'].iloc[0]})", fontsize=9, fontweight="bold")
+                    ax.legend(fontsize=7, loc='upper right')
+                    ax.grid(alpha=0.15)
+                    
+                    cols[idx % 3].pyplot(fig)
+            
+            st.stop() # Dừng app tại đây để không chạy các vòng lặp chi tiết bên dưới
                 # ==========================================
                 # 5. REPORT EXPORT (PDF & CSV)
                 # ==========================================
