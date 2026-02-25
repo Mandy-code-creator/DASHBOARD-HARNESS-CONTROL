@@ -478,13 +478,12 @@ if view_mode == "🚀 Global Summary Dashboard":
     st.stop()
  # ==============================================================================
 # ==============================================================================
-# ==============================================================================
-# 0. EXECUTIVE KPI DASHBOARD - FINAL CORRECTED VERSION (TOP 5 RISKS, DUAL LIMITS & EXPORT)
+# 0. EXECUTIVE KPI DASHBOARD (OVERVIEW) - STANDALONE BLOCK
 # ==============================================================================
 if view_mode == "📊 Executive KPI Dashboard":
     st.markdown("## 📊 Executive KPI Dashboard (Overall Quality Overview)")
     
-    # --- 1. TRÍCH XUẤT DỮ LIỆU TỪ CÁC NHÓM HỢP LỆ ---
+    # --- DATA EXTRACTOR ---
     extracted_dfs = []
     for _, grp in valid.iterrows():
         sub_df = df[
@@ -505,126 +504,268 @@ if view_mode == "📊 Executive KPI Dashboard":
         if df_kpi.empty:
             st.warning("⚠️ The coils in this filter lack sufficient data to generate KPIs.")
         else:
-            # --- 2. TÍNH TOÁN CÁC CHỈ SỐ KPI TỔNG QUÁT ---
             total_coils = len(df_kpi)
             
+            # --- HELPER FUNCTION: CLEAN NUMBERS ---
+            def clean_num(val, is_pct=False):
+                if pd.isna(val): return "0%" if is_pct else "0"
+                v = round(float(val), 2)
+                # Keep decimal only if it's not .00
+                res = str(int(v)) if v.is_integer() else str(v)
+                return f"{res}%" if is_pct else res
+
+            # --- 2. CALCULATE PRECISE PASS RATE ---
             def check_pass(val, min_col, max_col):
                 s_min = df_kpi[min_col].fillna(0) if min_col in df_kpi.columns else 0
                 s_max = df_kpi[max_col].fillna(9999).replace(0, 9999) if max_col in df_kpi.columns else 9999
                 return (val >= s_min) & (val <= s_max)
             
+            # Mechanical Evaluation
             df_kpi['TS_Pass'] = check_pass(df_kpi['TS'], 'Standard TS min', 'Standard TS max')
             df_kpi['YS_Pass'] = check_pass(df_kpi['YS'], 'Standard YS min', 'Standard YS max')
             df_kpi['EL_Pass'] = df_kpi['EL'] >= (df_kpi['Standard EL min'].fillna(0) if 'Standard EL min' in df_kpi.columns else 0)
             df_kpi['All_Pass'] = df_kpi['TS_Pass'] & df_kpi['YS_Pass'] & df_kpi['EL_Pass']
+            
+            # Hardness Control Evaluation
             df_kpi['HRB_Pass'] = (df_kpi['Hardness_LINE'] >= df_kpi['Limit_Min']) & (df_kpi['Hardness_LINE'] <= df_kpi['Limit_Max'])
             
+            yield_rate = df_kpi['All_Pass'].mean() * 100
+            hrb_yield = df_kpi['HRB_Pass'].mean() * 100 
+            ts_yield = df_kpi['TS_Pass'].mean() * 100
+            ys_yield = df_kpi['YS_Pass'].mean() * 100
+            el_yield = df_kpi['EL_Pass'].mean() * 100
+            
+            # --- BIG METRICS DISPLAY ---
             st.markdown("### 🏆 Overall Quality Metrics")
-            m1, m2, m3 = st.columns(3)
-            m1.metric("📦 Total Coils Tested", f"{total_coils:,}")
-            m2.metric("✅ Mech Yield Rate", f"{df_kpi['All_Pass'].mean()*100:.1f}%")
-            m3.metric("🎯 HRB Yield Rate", f"{df_kpi['HRB_Pass'].mean()*100:.1f}%")
-
+            col1, col2, col3, col4, col5, col6 = st.columns(6)
+            
+            col1.metric("📦 Total Coils Tested", f"{total_coils:,}")
+            
+            delta_mech = clean_num(yield_rate - 100, True) if yield_rate < 100 else "Perfect"
+            col2.metric("✅ Mech Yield Rate", clean_num(yield_rate, True), delta_mech, delta_color="normal" if yield_rate == 100 else "inverse")
+            
+            delta_hrb = clean_num(hrb_yield - 100, True) if hrb_yield < 100 else "In Control"
+            col3.metric("🎯 HRB Yield Rate", clean_num(hrb_yield, True), delta_hrb, delta_color="normal" if hrb_yield == 100 else "inverse")
+            
+            col4.metric("TS Pass", clean_num(ts_yield, True))
+            col5.metric("YS Pass", clean_num(ys_yield, True))
+            col6.metric("EL Pass", clean_num(el_yield, True))
+            
             st.markdown("---")
             
-            # --- 3. XÁC ĐỊNH DANH SÁCH RỦI RO (TOP 5 SPECS) ---
+            # --- 3. HIGH-RISK WATCHLIST & DIAGNOSTICS ---
+            st.markdown("### ⚠️ High-Risk Specs Watchlist")
+            st.caption("Top list of standard codes with the lowest mechanical pass rates or out-of-control hardness, requiring priority review.")
+            
             col_spec = "Product_Spec" if "Product_Spec" in df_kpi.columns else "Rule_Name"
-            risk_summary = df_kpi.groupby([col_spec, "Material", "Gauge_Range"]).agg(
-                Total_N=('COIL_NO', 'count'),
-                Mech_Yield=('All_Pass', 'mean'),
-                HRB_Yield=('HRB_Pass', 'mean')
+            
+            group_cols = [col_spec, "Quality_Group", "Material", "Gauge_Range"]
+            valid_group_cols = [c for c in group_cols if c in df_kpi.columns]
+            
+            risk_summary = df_kpi.groupby(valid_group_cols).agg(
+                Total_Coils=('COIL_NO', 'count'),
+                Mech_Pass_Coils=('All_Pass', 'sum'),
+                HRB_Pass_Coils=('HRB_Pass', 'sum'), 
+                Hardness_Mean=('Hardness_LINE', 'mean'),
+                Hardness_Std=('Hardness_LINE', 'std'),
+                LSL=('Limit_Min', 'first'),
+                USL=('Limit_Max', 'first')
             ).reset_index()
             
-            risk_top_5 = risk_summary.sort_values(['Mech_Yield', 'HRB_Yield']).head(5)
+            risk_summary['Mech Yield (%)'] = (risk_summary['Mech_Pass_Coils'] / risk_summary['Total_Coils'] * 100)
+            risk_summary['HRB Yield (%)'] = (risk_summary['HRB_Pass_Coils'] / risk_summary['Total_Coils'] * 100)
             
-            st.markdown("### ⚠️ Top 5 High-Risk Specs Watchlist")
-            st.dataframe(risk_top_5.style.format("{:.1f}%", subset=['Mech_Yield', 'HRB_Yield']), use_container_width=True, hide_index=True)
-
-            # ======================================================================
-            # 🔔 4. VISUAL DEEP DIVE: BIỂU ĐỒ PHÂN BỐ VỚI GIỚI HẠN KÉP
-            # ======================================================================
-            st.markdown("#### 🔔 Visual Deep Dive: Top 5 Critical Distributions")
-            st.info("ℹ️ **Màu Đen (--):** Giới hạn sản xuất (Control) | **Màu Tím (:):** Giới hạn phòng Lab (Lab Spec)")
-            
-            top_5_list = risk_top_5.to_dict('records')
-            cols = st.columns(3)
-            
-            for idx, risk_item in enumerate(top_5_list):
-                spec_name = risk_item[col_spec]
-                target_data = df_kpi[
-                    (df_kpi[col_spec] == spec_name) & 
-                    (df_kpi["Material"] == risk_item["Material"]) & 
-                    (df_kpi["Gauge_Range"] == risk_item["Gauge_Range"])
-                ]
+            # --- AI DIAGNOSTIC LOGIC ---
+            def diagnose_cause(row):
+                if row['HRB Yield (%)'] >= 100: return "-"
+                cause = []
+                if pd.notna(row['Hardness_Std']) and row['Hardness_Std'] > 3.0: 
+                    cause.append("High Volatility")
+                if row['Hardness_Mean'] <= row['LSL'] + 1.5: 
+                    cause.append("Mean Too Low")
+                if row['USL'] < 9000 and row['Hardness_Mean'] >= row['USL'] - 1.5: 
+                    cause.append("Mean Too High")
                 
-                if not target_data.empty:
-                    fig, ax = plt.subplots(figsize=(6, 4))
-                    hard_data = target_data["Hardness_LINE"].dropna()
-                    
-                    ax.hist(hard_data, bins=15, color="#ff9999", edgecolor="white", density=True, alpha=0.6)
-                    mu, std = hard_data.mean(), hard_data.std()
-                    if std > 0:
-                        x_range = np.linspace(hard_data.min()-10, hard_data.max()+10, 100)
-                        ax.plot(x_range, (1/(std*np.sqrt(2*np.pi)))*np.exp(-0.5*((x_range-mu)/std)**2), color="#cc0000", lw=2)
-                    
-                    l_min = target_data["Limit_Min"].iloc[0]
-                    l_max = target_data["Limit_Max"].iloc[0]
-                    lb_min = target_data["Lab_Min"].iloc[0]
-                    lb_max = target_data["Lab_Max"].iloc[0]
-                    
-                    if pd.notna(l_min) and l_min > 0:
-                        ax.axvline(l_min, color="black", linestyle="--", lw=2, label=f"Ctrl LSL: {l_min:.0f}")
-                    if pd.notna(l_max) and 0 < l_max < 9000:
-                        ax.axvline(l_max, color="black", linestyle="--", lw=2, label=f"Ctrl USL: {l_max:.0f}")
-                    
-                    if pd.notna(lb_min) and lb_min > 0:
-                        ax.axvline(lb_min, color="purple", linestyle=":", lw=1.5, label=f"Lab LSL: {lb_min:.0f}")
-                    if pd.notna(lb_max) and 0 < lb_max < 9000:
-                        ax.axvline(lb_max, color="purple", linestyle=":", lw=1.5, label=f"Lab USL: {lb_max:.0f}")
-                    
-                    ax.set_title(f"TOP {idx+1}: {spec_name}\n({target_data['Rule_Name'].iloc[0]})", fontsize=9, fontweight="bold")
-                    ax.legend(fontsize=7, loc='upper right')
-                    ax.grid(alpha=0.15)
-                    
-                    cols[idx % 3].pyplot(fig)
-            
-            # ==========================================
-            # 5. REPORT EXPORT (PDF & CSV) - ĐÃ ĐƯA VÀO TRƯỚC st.stop()
-            # ==========================================
-            st.markdown("---")
-            st.markdown("#### 📑 Export Actionable Report")
-            
-            import streamlit.components.v1 as components
-            col_csv, col_pdf, _ = st.columns([2, 2, 6])
-            
-            with col_csv:
-                # FIX: Đã sửa 'risk_top' thành 'risk_top_5'
-                csv_data = risk_top_5.to_csv(index=False).encode('utf-8-sig')
-                st.download_button(
-                    label="📥 Download Watchlist (CSV)",
-                    data=csv_data,
-                    file_name="High_Risk_Watchlist.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
-                
-            with col_pdf:
-                if st.button("🖨️ Save as PDF Report", use_container_width=True):
-                    components.html("<script>window.parent.print();</script>", height=0)
-            
-            st.markdown("""
-            <style>
-            @media print {
-                [data-testid="stSidebar"] { display: none !important; }
-                header { display: none !important; }
-                .stButton, .stDownloadButton { display: none !important; }
-                @page { size: A4 landscape; margin: 10mm; }
-                .stApp { background-color: white !important; }
-            }
-            </style>
-            """, unsafe_allow_html=True)
+                if not cause: cause.append("Narrow Spec Limit")
+                return " + ".join(cause)
 
-    # CRITICAL: Lệnh st.stop() nằm cuối cùng để ngăn chạy phần details bên dưới
+            def recommend_action(row):
+                if row['HRB Yield (%)'] >= 100: return "✅ Maintain Process"
+                cause = row['Root Cause']
+                if "High Volatility" in cause: return "🔍 Check Furnace/Skin-pass"
+                if "Mean Too Low" in cause: return "⚙️ Dec. Skin-pass / Inc. Temp"
+                if "Mean Too High" in cause: return "⚙️ Inc. Skin-pass / Dec. Temp"
+                return "📋 Review Spec Feasibility"
+
+            risk_summary['Root Cause'] = risk_summary.apply(diagnose_cause, axis=1)
+            risk_summary['Action Plan'] = risk_summary.apply(recommend_action, axis=1)
+            
+            risk_top = risk_summary[risk_summary['Total_Coils'] >= 3].sort_values(['Mech Yield (%)', 'HRB Yield (%)']).head(10)
+            
+            if not risk_top.empty:
+                rename_dict = {
+                    col_spec: "Specification",
+                    "Quality_Group": "Quality",
+                    "Material": "Material",
+                    "Gauge_Range": "Gauge",
+                    "Total_Coils": "Tested Coils",
+                    "Hardness_Mean": "Avg Hardness",
+                    "Hardness_Std": "Hardness Std Dev"
+                }
+                risk_top = risk_top.rename(columns=rename_dict)
+                
+                cols_order = ["Specification", "Quality", "Material", "Gauge", "Tested Coils", "Mech Yield (%)", "HRB Yield (%)", "Avg Hardness", "Hardness Std Dev", "Root Cause", "Action Plan"]
+                cols_order = [c for c in cols_order if c in risk_top.columns]
+                risk_top = risk_top[cols_order]
+                
+                risk_top['Mech Yield (%)'] = risk_top['Mech Yield (%)'].apply(lambda x: clean_num(x, True))
+                risk_top['HRB Yield (%)'] = risk_top['HRB Yield (%)'].apply(lambda x: clean_num(x, True))
+                risk_top['Avg Hardness'] = risk_top['Avg Hardness'].apply(lambda x: clean_num(x))
+                risk_top['Hardness Std Dev'] = risk_top['Hardness Std Dev'].apply(lambda x: clean_num(x))
+                
+                def style_risk(val):
+                    try:
+                        num = float(str(val).replace('%', '').strip())
+                        if num < 100: return 'color: #d32f2f; font-weight: bold; background-color: #ffebee'
+                        if num >= 100: return 'color: #388e3c; font-weight: bold'
+                    except:
+                        pass
+                    return ''
+                
+                def style_std(val):
+                    try:
+                        num = float(str(val).strip())
+                        if num > 3.0: return 'color: #f57c00; font-weight: bold'
+                    except:
+                        pass
+                    return ''
+                
+                def style_action(val):
+                    if "Check" in str(val): return 'color: #d32f2f; font-weight: bold'
+                    if "⚙️" in str(val): return 'color: #1976d2; font-weight: bold'
+                    if "✅" in str(val): return 'color: #388e3c'
+                    return ''
+
+                # Update style map for Pandas compatability
+                styled_risk = risk_top.style
+                if hasattr(styled_risk, "map"):
+                    styled_risk = (styled_risk
+                                   .map(style_risk, subset=['Mech Yield (%)', 'HRB Yield (%)'])
+                                   .map(style_std, subset=['Hardness Std Dev'])
+                                   .map(style_action, subset=['Action Plan']))
+                else:
+                    styled_risk = (styled_risk
+                                   .applymap(style_risk, subset=['Mech Yield (%)', 'HRB Yield (%)'])
+                                   .applymap(style_std, subset=['Hardness Std Dev'])
+                                   .applymap(style_action, subset=['Action Plan']))
+                
+                # Render Table
+                st.dataframe(styled_risk, use_container_width=True, hide_index=True)
+                
+                # ==========================================
+                # 4. VISUAL DEEP DIVE (HISTOGRAMS) - ĐÃ CẬP NHẬT TOP 5
+                # ==========================================
+                st.markdown("#### 🔔 Visual Deep Dive: Top 5 Risk Distributions")
+                st.caption("Visualizing the 'bell curve' of the top 5 most critical specifications to expose control limit breaches.")
+                
+                top_5_risks = risk_top.head(5).to_dict('records') # <-- Đổi thành head(5)
+                
+                # Tạo 3 cột để hiển thị 5 biểu đồ gọn gàng
+                chart_cols = st.columns(3) 
+                
+                for idx, risk_item in enumerate(top_5_risks):
+                    spec_name = risk_item["Specification"]
+                    mat_name = risk_item["Material"]
+                    gauge_val = risk_item["Gauge"]
+                    
+                    target_data = df_kpi[
+                        (df_kpi[col_spec] == spec_name) & 
+                        (df_kpi["Material"] == mat_name) & 
+                        (df_kpi["Gauge_Range"] == gauge_val)
+                    ]
+                    
+                    if not target_data.empty:
+                        fig, ax = plt.subplots(figsize=(6, 4))
+                        hard_data = target_data["Hardness_LINE"].dropna()
+                        
+                        # Histogram
+                        ax.hist(hard_data, bins=15, color="#ff9999", edgecolor="white", density=True, alpha=0.8)
+                        
+                        # Bell Curve Fit
+                        mean_val = hard_data.mean()
+                        std_val = hard_data.std()
+                        if std_val > 0:
+                            x_axis = np.linspace(hard_data.min() - 2, hard_data.max() + 2, 100)
+                            y_axis = (1/(std_val * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_axis - mean_val) / std_val)**2)
+                            ax.plot(x_axis, y_axis, color="#cc0000", lw=2, label="Distribution Fit")
+                        
+                        # Control Limits (Sản xuất)
+                        l_min = target_data["Limit_Min"].iloc[0]
+                        l_max = target_data["Limit_Max"].iloc[0]
+                        # Lab Limits (Từ dữ liệu Rule công ty)
+                        lb_min = target_data["Lab_Min"].iloc[0] if "Lab_Min" in target_data.columns else 0
+                        lb_max = target_data["Lab_Max"].iloc[0] if "Lab_Max" in target_data.columns else 0
+                        
+                        # Vẽ Giới hạn Control
+                        ax.axvline(l_min, color="black", linestyle="--", lw=1.5, label=f"Ctrl LSL ({l_min:.0f})")
+                        if l_max > 0 and l_max < 9000:
+                            ax.axvline(l_max, color="black", linestyle="--", lw=1.5, label=f"Ctrl USL ({l_max:.0f})")
+                        
+                        # Vẽ Giới hạn Lab
+                        if pd.notna(lb_min) and lb_min > 0:
+                            ax.axvline(lb_min, color="purple", linestyle=":", lw=1.5, label=f"Lab LSL ({lb_min:.0f})")
+                        if pd.notna(lb_max) and 0 < lb_max < 9000:
+                            ax.axvline(lb_max, color="purple", linestyle=":", lw=1.5, label=f"Lab USL ({lb_max:.0f})")
+                        
+                        ax.set_title(f"TOP {idx+1}: {spec_name}\nMaterial: {mat_name} | N={len(hard_data)}", fontsize=10, fontweight="bold")
+                        ax.set_xlabel("Hardness (HRB)", fontsize=9)
+                        ax.legend(fontsize=8, loc="upper right")
+                        ax.grid(alpha=0.3, linestyle=":")
+                        
+                        # Vẽ tuần tự vào các cột
+                        chart_cols[idx % 3].pyplot(fig)
+                
+                # ==========================================
+                # 5. REPORT EXPORT (PDF & CSV)
+                # ==========================================
+                st.markdown("---")
+                st.markdown("#### 📑 Export Actionable Report")
+                
+                import streamlit.components.v1 as components
+                
+                col_csv, col_pdf, _ = st.columns([2, 2, 6])
+                
+                with col_csv:
+                    csv_data = risk_top.to_csv(index=False).encode('utf-8-sig')
+                    st.download_button(
+                        label="📥 Download Watchlist (CSV)",
+                        data=csv_data,
+                        file_name=f"High_Risk_Watchlist.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+                    
+                with col_pdf:
+                    if st.button("🖨️ Save as PDF Report", use_container_width=True):
+                        components.html("<script>window.parent.print();</script>", height=0)
+                
+                # --- CSS FORMATTING FOR CLEAN PDF PRINT ---
+                st.markdown("""
+                <style>
+                @media print {
+                    [data-testid="stSidebar"] { display: none !important; }
+                    header { display: none !important; }
+                    .stButton, .stDownloadButton { display: none !important; }
+                    @page { size: A4 landscape; margin: 10mm; }
+                    .stApp { background-color: white !important; }
+                }
+                </style>
+                """, unsafe_allow_html=True)
+
+            else:
+                st.success("🎉 Excellent! All products are stable with no significant risks.")
+    
+    # CRITICAL: Stop app execution here so it doesn't run the detailed loop below
     st.stop()
 # ==============================================================================
 # ==============================================================================
