@@ -718,6 +718,61 @@ elif view_mode == "📊 Executive KPI Dashboard":
     
     # CRITICAL: Stop app execution here so it doesn't run the detailed loop below
     st.stop()
+    # ... (Đoạn code vẽ biểu đồ Histogram của bạn ở trên) ...
+                
+                # ==========================================
+                # 5. REPORT EXPORT (XUẤT BÁO CÁO)
+                # ==========================================
+                st.markdown("---")
+                st.markdown("#### 📑 Export Actionable Report")
+                
+                import streamlit.components.v1 as components
+                
+                col_csv, col_pdf, _ = st.columns([2, 2, 6])
+                
+                with col_csv:
+                    # 1. Nút xuất Excel/CSV cho Sếp thích số liệu thô
+                    csv_data = risk_top.to_csv(index=False).encode('utf-8-sig')
+                    st.download_button(
+                        label="📥 Download Watchlist (CSV)",
+                        data=csv_data,
+                        file_name=f"High_Risk_Watchlist.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+                    
+                with col_pdf:
+                    # 2. Nút kích hoạt In PDF
+                    if st.button("🖨️ Save as PDF Report", use_container_width=True):
+                        # Dùng JavaScript để tự động bật hộp thoại Lưu PDF của trình duyệt
+                        components.html("<script>window.parent.print();</script>", height=0)
+                
+                # --- CSS ĐỂ FORMAT TRANG IN PDF CỰC CHUẨN ---
+                st.markdown("""
+                <style>
+                @media print {
+                    /* Ẩn thanh Sidebar, thanh Header và các nút bấm để trang giấy sạch sẽ */
+                    [data-testid="stSidebar"] { display: none !important; }
+                    header { display: none !important; }
+                    .stButton, .stDownloadButton { display: none !important; }
+                    
+                    /* Ép trình duyệt in theo khổ giấy A4 ngang (Landscape) cho vừa bảng lớn */
+                    @page { 
+                        size: A4 landscape; 
+                        margin: 10mm; 
+                    }
+                    
+                    /* Bỏ màu nền xám của app, đổi thành nền trắng tinh của giấy */
+                    .stApp { background-color: white !important; }
+                }
+                </style>
+                """, unsafe_allow_html=True)
+
+            else:
+                st.success("🎉 Excellent! All products are stable with no significant risks.")
+    
+    # CRITICAL: Stop app execution here so it doesn't run the detailed loop below
+    st.stop()
 # ==============================================================================
 # ==============================================================================
 # MAIN LOOP (DETAILS)
