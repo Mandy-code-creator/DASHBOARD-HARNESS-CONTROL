@@ -479,6 +479,7 @@ if view_mode == "🚀 Global Summary Dashboard":
     st.stop()
  # ==============================================================================
 # ==============================================================================
+# ==============================================================================
 # 0. EXECUTIVE KPI DASHBOARD (OVERVIEW) - ĐẶT NGOÀI VÒNG LẶP CHÍNH
 # ==============================================================================
 if view_mode == "📊 Executive KPI Dashboard":
@@ -523,26 +524,26 @@ if view_mode == "📊 Executive KPI Dashboard":
             df_kpi['HRB_Pass'] = (df_kpi['Hardness_LINE'] >= df_kpi['Limit_Min']) & (df_kpi['Hardness_LINE'] <= df_kpi['Limit_Max'])
             
             yield_rate = df_kpi['All_Pass'].mean() * 100
-            hrb_yield = df_kpi['HRB_Pass'].mean() * 100 # <--- TỈ LỆ ĐẠT ĐỘ CỨNG
+            hrb_yield = df_kpi['HRB_Pass'].mean() * 100 
             ts_yield = df_kpi['TS_Pass'].mean() * 100
             ys_yield = df_kpi['YS_Pass'].mean() * 100
             el_yield = df_kpi['EL_Pass'].mean() * 100
             
-            # --- BIG METRICS DISPLAY (MỞ RỘNG THÀNH 6 CỘT) ---
+            # --- BIG METRICS DISPLAY (ĐÃ CẬP NHẬT 2 SỐ THẬP PHÂN) ---
             st.markdown("### 🏆 Overall Quality Metrics")
             col1, col2, col3, col4, col5, col6 = st.columns(6)
             
             col1.metric("📦 Total Coils Tested", f"{total_coils:,}")
             
-            delta_mech = f"{yield_rate - 100:.1f}%" if yield_rate < 100 else "Perfect"
-            col2.metric("✅ Mech Yield Rate", f"{yield_rate:.1f}%", delta_mech, delta_color="normal" if yield_rate == 100 else "inverse")
+            delta_mech = f"{yield_rate - 100:.2f}%" if yield_rate < 100 else "Perfect"
+            col2.metric("✅ Mech Yield Rate", f"{yield_rate:.2f}%", delta_mech, delta_color="normal" if yield_rate == 100 else "inverse")
             
-            delta_hrb = f"{hrb_yield - 100:.1f}%" if hrb_yield < 100 else "In Control"
-            col3.metric("🎯 HRB Pass Rate", f"{hrb_yield:.1f}%", delta_hrb, delta_color="normal" if hrb_yield == 100 else "inverse")
+            delta_hrb = f"{hrb_yield - 100:.2f}%" if hrb_yield < 100 else "In Control"
+            col3.metric("🎯 HRB Pass Rate", f"{hrb_yield:.2f}%", delta_hrb, delta_color="normal" if hrb_yield == 100 else "inverse")
             
-            col4.metric("TS Pass", f"{ts_yield:.1f}%")
-            col5.metric("YS Pass", f"{ys_yield:.1f}%")
-            col6.metric("EL Pass", f"{el_yield:.1f}%")
+            col4.metric("TS Pass", f"{ts_yield:.2f}%")
+            col5.metric("YS Pass", f"{ys_yield:.2f}%")
+            col6.metric("EL Pass", f"{el_yield:.2f}%")
             
             st.markdown("---")
             
@@ -558,15 +559,15 @@ if view_mode == "📊 Executive KPI Dashboard":
             risk_summary = df_kpi.groupby(valid_group_cols).agg(
                 Total_Coils=('COIL_NO', 'count'),
                 Mech_Pass_Coils=('All_Pass', 'sum'),
-                HRB_Pass_Coils=('HRB_Pass', 'sum'), # Đếm số cuộn đạt độ cứng
+                HRB_Pass_Coils=('HRB_Pass', 'sum'), 
                 Hardness_Mean=('Hardness_LINE', 'mean'),
                 Hardness_Std=('Hardness_LINE', 'std')
             ).reset_index()
             
-            risk_summary['Mech Yield (%)'] = (risk_summary['Mech_Pass_Coils'] / risk_summary['Total_Coils'] * 100).round(1)
-            risk_summary['HRB Yield (%)'] = (risk_summary['HRB_Pass_Coils'] / risk_summary['Total_Coils'] * 100).round(1)
+            # Đã cập nhật round(2)
+            risk_summary['Mech Yield (%)'] = (risk_summary['Mech_Pass_Coils'] / risk_summary['Total_Coils'] * 100).round(2)
+            risk_summary['HRB Yield (%)'] = (risk_summary['HRB_Pass_Coils'] / risk_summary['Total_Coils'] * 100).round(2)
             
-            # Sắp xếp ưu tiên: Mã nào rớt cơ tính xếp trước, sau đó đến mã rớt độ cứng
             risk_top = risk_summary[risk_summary['Total_Coils'] >= 3].sort_values(['Mech Yield (%)', 'HRB Yield (%)']).head(10)
             
             if not risk_top.empty:
@@ -597,14 +598,15 @@ if view_mode == "📊 Executive KPI Dashboard":
                         return 'color: #f57c00; font-weight: bold'
                     return ''
 
+                # Đã cập nhật format .2f cho toàn bộ bảng
                 styled_risk = (
                     risk_top.style
                     .map(style_risk, subset=['Mech Yield (%)', 'HRB Yield (%)']) if hasattr(risk_top.style, "map") else risk_top.style.applymap(style_risk, subset=['Mech Yield (%)', 'HRB Yield (%)'])
                     .map(style_std, subset=['Hardness Std Dev']) if hasattr(risk_top.style, "map") else risk_top.style.applymap(style_std, subset=['Hardness Std Dev'])
                     .format({
-                        "Mech Yield (%)": "{:.1f}%",
-                        "HRB Yield (%)": "{:.1f}%",
-                        "Avg Hardness": "{:.1f}",
+                        "Mech Yield (%)": "{:.2f}%",
+                        "HRB Yield (%)": "{:.2f}%",
+                        "Avg Hardness": "{:.2f}",
                         "Hardness Std Dev": "{:.2f}"
                     })
                 )
