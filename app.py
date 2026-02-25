@@ -477,6 +477,132 @@ if view_mode == "🚀 Global Summary Dashboard":
             st.warning("Insufficient data.")
     
     st.stop()
+ # ==============================================================================
+# 0. EXECUTIVE KPI DASHBOARD (OVERVIEW) - ĐẶT NGOÀI VÒNG LẶP CHÍNH
+# ==============================================================================
+if view_mode == "📊 Executive KPI Dashboard":
+    st.markdown("## 📊 Executive KPI Dashboard (Overall Quality Overview)")
+    
+    # --- DATA EXTRACTOR ---
+    extracted_dfs = []
+    for _, grp in valid.iterrows():
+        sub_df = df[
+            (df["Rolling_Type"] == grp["Rolling_Type"]) &
+            (df["Metallic_Type"] == grp["Metallic_Type"]) &
+            (df["Quality_Group"] == grp["Quality_Group"]) &
+            (df["Gauge_Range"] == grp["Gauge_Range"]) &
+            (df["Material"] == grp["Material"])
+        ]
+        extracted_dfs.append(sub_df)
+    
+    if len(extracted_dfs) == 0:
+        st.warning("⚠️ No data matches the current filter. Please adjust the sidebar filters.")
+    else:
+        full_df = pd.concat(extracted_dfs)
+        df_kpi = full_df.dropna(subset=['TS', 'YS', 'EL']).copy()
+        
+        if df_kpi.empty:
+            st.warning("⚠️ The coils in this filter lack sufficient Mechanical Properties data (TS, YS, EL) to generate KPIs.")
+        else:
+            total_coils = len(df_kpi)
+            
+            # 2. CALCULATE PRECISE PASS RATE
+            def check_pass(val, min_col, max_col):
+                s_min = df_kpi[min_col].fillna(0) if min_col in df_kpi.columns else 0
+                s_max = df_kpi[max_col].fillna(9999).replace(0, 9999) if max_col in df_kpi.columns else 9999
+                return (val >= s_min) & (val <= s_max)
+            
+            df_kpi['TS_Pass'] = check_pass(df_kpi['TS'], 'Standard TS min', 'Standard TS max')
+            df_kpi['YS_Pass'] = check_pass(df_kpi['YS'], 'Standard YS min', 'Standard YS max')
+            df_kpi['EL_Pass'] = df_kpi['EL'] >= (df_kpi['Standard EL min'].fillna(0) if 'Standard EL min' in df_kpi.columns else 0)
+            
+            # Overall Pass
+            df_kpi['All_Pass'] = df_kpi['TS_Pass'] & df_kpi['YS_Pass'] & df_kpi['EL_Pass']
+            
+            yield_rate = df_kpi['All_Pass'].mean() * 100
+            ts_yield = df_kpi['TS_Pass'].mean() * 100
+            ys_yield = df_kpi['YS_Pass'].mean() * 100
+            el_yield = df_kpi['EL_Pass'].mean() * 100
+            
+            # --- BIG METRICS DISPLAY ---
+            st.markdown("### 🏆 Overall Quality Metrics")
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("📦 Total Coils Tested", f"{total_coils:,}")
+            
+            delta_val = f"{yield_rate - 100:.1f}%" if yield_rate < 100 else "Perfect"
+            col2.metric("✅ Overall Yield Rate", f"{yield_rate:.1f}%", delta_val, delta_color="normal" if yield_rate == 100 else "inverse")
+            col3.metric("🎯 TS Pass Rate", f"{ts_yield:.1f}%")
+            col4.metric("🎯 YS Pass Rate", f"{ys_yield:.1f}%")
+            
+            st.markdown("---")
+            
+            # --- 3. HIGH-RISK WATCHLIST ---
+            st.markdown("### ⚠️ High-Risk Specs Watchlist")
+            st.caption("Top list of standard codes with the lowest mechanical pass rates or highest hardness volatility, requiring priority review.")
+            
+            col_spec = "Product_Spec" if "Product_Spec" in df_kpi.columns else "Rule_Name"
+            
+            group_cols = [col_spec, "Quality_Group", "Material", "Gauge_Range"]
+            valid_group_cols = [c for c in group_cols if c in df_kpi.columns]
+            
+            risk_summary = df_kpi.groupby(valid_group_cols).agg(
+                Total_Coils=('COIL_NO', 'count'),
+                Pass_Coils=('All_Pass', 'sum'),
+                Hardness_Mean=('Hardness_LINE', 'mean'),
+                Hardness_Std=('Hardness_LINE', 'std')
+            ).reset_index()
+            
+            risk_summary['Yield Rate (%)'] = (risk_summary['Pass_Coils'] / risk_summary['Total_Coils'] * 100).round(1)
+            risk_top = risk_summary[risk_summary['Total_Coils'] >= 3].sort_values('Yield Rate (%)').head(10)
+            
+            if not risk_top.empty:
+                rename_dict = {
+                    col_spec: "Specification",
+                    "Quality_Group": "Quality",
+                    "Material": "Material",
+                    "Gauge_Range": "Gauge",
+                    "Total_Coils": "Tested Coils",
+                    "Hardness_Mean": "Avg Hardness",
+                    "Hardness_Std": "Hardness Std Dev"
+                }
+                risk_top = risk_top.rename(columns=rename_dict)
+                
+                cols_order = ["Specification", "Quality", "Material", "Gauge", "Tested Coils", "Yield Rate (%)", "Avg Hardness", "Hardness Std Dev"]
+                cols_order = [c for c in cols_order if c in risk_top.columns]
+                risk_top = risk_top[cols_order]
+                
+                def style_risk(val):
+                    if isinstance(val, (int, float)) and val < 100:
+                        return 'color: #d32f2f; font-weight: bold; background-color: #ffebee'
+                    elif isinstance(val, (int, float)) and val == 100:
+                        return 'color: #388e3c; font-weight: bold'
+                    return ''
+                
+                def style_std(val):
+                    if isinstance(val, (int, float)) and val > 5.0:
+                        return 'color: #f57c00; font-weight: bold'
+                    return ''
+
+                styled_risk = (
+                    risk_top.style
+                    .applymap(style_risk, subset=['Yield Rate (%)'])
+                    .applymap(style_std, subset=['Hardness Std Dev'])
+                    .format({
+                        "Yield Rate (%)": "{:.1f}%",
+                        "Avg Hardness": "{:.1f}",
+                        "Hardness Std Dev": "{:.2f}"
+                    })
+                )
+                st.dataframe(styled_risk, use_container_width=True, hide_index=True)
+            else:
+                st.success("🎉 Excellent! All products are stable with no significant risks.")
+    
+    st.stop() # CỰC KỲ QUAN TRỌNG: Dừng app luôn, không chạy vào vòng lặp chính
+
+# ==============================================================================
+# MAIN LOOP (DETAILS) - KHÔNG ĐỤNG TỚI
+# ==============================================================================
+for i, (_, g) in enumerate(valid.iterrows()):   
 # ==============================================================================
 # MAIN LOOP (DETAILS)
 # ==============================================================================
