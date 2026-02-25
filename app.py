@@ -481,7 +481,7 @@ if view_mode == "🚀 Global Summary Dashboard":
 # ==============================================================================
 # 0. EXECUTIVE KPI DASHBOARD (OVERVIEW) - STANDALONE BLOCK
 # ==============================================================================
-elif view_mode == "📊 Executive KPI Dashboard":
+if view_mode == "📊 Executive KPI Dashboard":
     st.markdown("## 📊 Executive KPI Dashboard (Overall Quality Overview)")
     
     # --- DATA EXTRACTOR ---
@@ -593,9 +593,9 @@ elif view_mode == "📊 Executive KPI Dashboard":
             def recommend_action(row):
                 if row['HRB Yield (%)'] >= 100: return "✅ Maintain Process"
                 cause = row['Root Cause']
-                if "High Volatility" in cause: return "🔍 Check Furnace/Skin-pass Stability"
-                if "Mean Too Low" in cause: return "⚙️ Decrease Skin-pass / Increase Temp"
-                if "Mean Too High" in cause: return "⚙️ Increase Skin-pass / Decrease Temp"
+                if "High Volatility" in cause: return "🔍 Check Furnace/Skin-pass"
+                if "Mean Too Low" in cause: return "⚙️ Dec. Skin-pass / Inc. Temp"
+                if "Mean Too High" in cause: return "⚙️ Inc. Skin-pass / Dec. Temp"
                 return "📋 Review Spec Feasibility"
 
             risk_summary['Root Cause'] = risk_summary.apply(diagnose_cause, axis=1)
@@ -647,7 +647,7 @@ elif view_mode == "📊 Executive KPI Dashboard":
                     if "✅" in str(val): return 'color: #388e3c'
                     return ''
 
-                # Cập nhật style tương thích với cả 2 phiên bản Pandas
+                # Update style map for Pandas compatability
                 styled_risk = risk_top.style
                 if hasattr(styled_risk, "map"):
                     styled_risk = (styled_risk
@@ -712,16 +712,9 @@ elif view_mode == "📊 Executive KPI Dashboard":
                         ax.grid(alpha=0.3, linestyle=":")
                         
                         chart_cols[idx].pyplot(fig)
-                        
-            else:
-                st.success("🎉 Excellent! All products are stable with no significant risks.")
-    
-    # CRITICAL: Stop app execution here so it doesn't run the detailed loop below
-    st.stop()
-    # ... (Đoạn code vẽ biểu đồ Histogram của bạn ở trên) ...
                 
                 # ==========================================
-                # 5. REPORT EXPORT (XUẤT BÁO CÁO)
+                # 5. REPORT EXPORT (PDF & CSV)
                 # ==========================================
                 st.markdown("---")
                 st.markdown("#### 📑 Export Actionable Report")
@@ -731,7 +724,6 @@ elif view_mode == "📊 Executive KPI Dashboard":
                 col_csv, col_pdf, _ = st.columns([2, 2, 6])
                 
                 with col_csv:
-                    # 1. Nút xuất Excel/CSV cho Sếp thích số liệu thô
                     csv_data = risk_top.to_csv(index=False).encode('utf-8-sig')
                     st.download_button(
                         label="📥 Download Watchlist (CSV)",
@@ -742,27 +734,17 @@ elif view_mode == "📊 Executive KPI Dashboard":
                     )
                     
                 with col_pdf:
-                    # 2. Nút kích hoạt In PDF
                     if st.button("🖨️ Save as PDF Report", use_container_width=True):
-                        # Dùng JavaScript để tự động bật hộp thoại Lưu PDF của trình duyệt
                         components.html("<script>window.parent.print();</script>", height=0)
                 
-                # --- CSS ĐỂ FORMAT TRANG IN PDF CỰC CHUẨN ---
+                # --- CSS FORMATTING FOR CLEAN PDF PRINT ---
                 st.markdown("""
                 <style>
                 @media print {
-                    /* Ẩn thanh Sidebar, thanh Header và các nút bấm để trang giấy sạch sẽ */
                     [data-testid="stSidebar"] { display: none !important; }
                     header { display: none !important; }
                     .stButton, .stDownloadButton { display: none !important; }
-                    
-                    /* Ép trình duyệt in theo khổ giấy A4 ngang (Landscape) cho vừa bảng lớn */
-                    @page { 
-                        size: A4 landscape; 
-                        margin: 10mm; 
-                    }
-                    
-                    /* Bỏ màu nền xám của app, đổi thành nền trắng tinh của giấy */
+                    @page { size: A4 landscape; margin: 10mm; }
                     .stApp { background-color: white !important; }
                 }
                 </style>
