@@ -478,7 +478,8 @@ if view_mode == "🚀 Global Summary Dashboard":
     st.stop()
  # ==============================================================================
 # ==============================================================================
-# 0. EXECUTIVE KPI DASHBOARD - FINAL VERSION (TOP 5 RISKS & DUAL LIMITS)
+# ==============================================================================
+# 0. EXECUTIVE KPI DASHBOARD - FINAL CORRECTED VERSION (TOP 5 RISKS, DUAL LIMITS & EXPORT)
 # ==============================================================================
 if view_mode == "📊 Executive KPI Dashboard":
     st.markdown("## 📊 Executive KPI Dashboard (Overall Quality Overview)")
@@ -499,7 +500,6 @@ if view_mode == "📊 Executive KPI Dashboard":
         st.warning("⚠️ No data matches the current filter. Please adjust the sidebar filters.")
     else:
         full_df = pd.concat(extracted_dfs)
-        # Loại bỏ các hàng thiếu dữ liệu quan trọng để tính KPI chính xác
         df_kpi = full_df.dropna(subset=['TS', 'YS', 'EL', 'Hardness_LINE']).copy()
         
         if df_kpi.empty:
@@ -513,14 +513,12 @@ if view_mode == "📊 Executive KPI Dashboard":
                 s_max = df_kpi[max_col].fillna(9999).replace(0, 9999) if max_col in df_kpi.columns else 9999
                 return (val >= s_min) & (val <= s_max)
             
-            # Đánh giá đạt chuẩn cơ tính và độ cứng
             df_kpi['TS_Pass'] = check_pass(df_kpi['TS'], 'Standard TS min', 'Standard TS max')
             df_kpi['YS_Pass'] = check_pass(df_kpi['YS'], 'Standard YS min', 'Standard YS max')
             df_kpi['EL_Pass'] = df_kpi['EL'] >= (df_kpi['Standard EL min'].fillna(0) if 'Standard EL min' in df_kpi.columns else 0)
             df_kpi['All_Pass'] = df_kpi['TS_Pass'] & df_kpi['YS_Pass'] & df_kpi['EL_Pass']
             df_kpi['HRB_Pass'] = (df_kpi['Hardness_LINE'] >= df_kpi['Limit_Min']) & (df_kpi['Hardness_LINE'] <= df_kpi['Limit_Max'])
             
-            # Hiển thị thẻ chỉ số (Metrics)
             st.markdown("### 🏆 Overall Quality Metrics")
             m1, m2, m3 = st.columns(3)
             m1.metric("📦 Total Coils Tested", f"{total_coils:,}")
@@ -537,24 +535,22 @@ if view_mode == "📊 Executive KPI Dashboard":
                 HRB_Yield=('HRB_Pass', 'mean')
             ).reset_index()
             
-            # Sắp xếp lấy 5 quy cách có tỷ lệ đạt thấp nhất
             risk_top_5 = risk_summary.sort_values(['Mech_Yield', 'HRB_Yield']).head(5)
             
             st.markdown("### ⚠️ Top 5 High-Risk Specs Watchlist")
             st.dataframe(risk_top_5.style.format("{:.1f}%", subset=['Mech_Yield', 'HRB_Yield']), use_container_width=True, hide_index=True)
 
             # ======================================================================
-            # 🔔 4. VISUAL DEEP DIVE: BIỂU ĐỒ PHÂN BỐ VỚI GIỚI HẠN KÉP (CONTROL & LAB)
+            # 🔔 4. VISUAL DEEP DIVE: BIỂU ĐỒ PHÂN BỐ VỚI GIỚI HẠN KÉP
             # ======================================================================
             st.markdown("#### 🔔 Visual Deep Dive: Top 5 Critical Distributions")
             st.info("ℹ️ **Màu Đen (--):** Giới hạn sản xuất (Control) | **Màu Tím (:):** Giới hạn phòng Lab (Lab Spec)")
             
             top_5_list = risk_top_5.to_dict('records')
-            cols = st.columns(3) # Hiển thị 3 biểu đồ mỗi hàng cho gọn
+            cols = st.columns(3)
             
             for idx, risk_item in enumerate(top_5_list):
                 spec_name = risk_item[col_spec]
-                # Lọc dữ liệu riêng cho từng Spec trong Top 5
                 target_data = df_kpi[
                     (df_kpi[col_spec] == spec_name) & 
                     (df_kpi["Material"] == risk_item["Material"]) & 
@@ -565,26 +561,22 @@ if view_mode == "📊 Executive KPI Dashboard":
                     fig, ax = plt.subplots(figsize=(6, 4))
                     hard_data = target_data["Hardness_LINE"].dropna()
                     
-                    # Vẽ Histogram & Đường cong Bell Curve
                     ax.hist(hard_data, bins=15, color="#ff9999", edgecolor="white", density=True, alpha=0.6)
                     mu, std = hard_data.mean(), hard_data.std()
                     if std > 0:
                         x_range = np.linspace(hard_data.min()-10, hard_data.max()+10, 100)
                         ax.plot(x_range, (1/(std*np.sqrt(2*np.pi)))*np.exp(-0.5*((x_range-mu)/std)**2), color="#cc0000", lw=2)
                     
-                    # Lấy các thông số giới hạn Applied (Ví dụ Rule A108-Gen)
-                    l_min = target_data["Limit_Min"].iloc[0] # Giới hạn Control thấp
-                    l_max = target_data["Limit_Max"].iloc[0] # Giới hạn Control cao
-                    lb_min = target_data["Lab_Min"].iloc[0]   # Giới hạn Lab thấp
-                    lb_max = target_data["Lab_Max"].iloc[0]   # Giới hạn Lab cao
+                    l_min = target_data["Limit_Min"].iloc[0]
+                    l_max = target_data["Limit_Max"].iloc[0]
+                    lb_min = target_data["Lab_Min"].iloc[0]
+                    lb_max = target_data["Lab_Max"].iloc[0]
                     
-                    # --- VẼ GIỚI HẠN KIỂM SOÁT (CONTROL - MÀU ĐEN) ---
                     if pd.notna(l_min) and l_min > 0:
                         ax.axvline(l_min, color="black", linestyle="--", lw=2, label=f"Ctrl LSL: {l_min:.0f}")
                     if pd.notna(l_max) and 0 < l_max < 9000:
                         ax.axvline(l_max, color="black", linestyle="--", lw=2, label=f"Ctrl USL: {l_max:.0f}")
                     
-                    # --- VẼ GIỚI HẠN PHÒNG LAB (LAB - MÀU TÍM) ---
                     if pd.notna(lb_min) and lb_min > 0:
                         ax.axvline(lb_min, color="purple", linestyle=":", lw=1.5, label=f"Lab LSL: {lb_min:.0f}")
                     if pd.notna(lb_max) and 0 < lb_max < 9000:
@@ -596,48 +588,43 @@ if view_mode == "📊 Executive KPI Dashboard":
                     
                     cols[idx % 3].pyplot(fig)
             
-            st.stop() # Dừng app tại đây để không chạy các vòng lặp chi tiết bên dưới
-                # ==========================================
-                # 5. REPORT EXPORT (PDF & CSV)
-                # ==========================================
-                st.markdown("---")
-                st.markdown("#### 📑 Export Actionable Report")
+            # ==========================================
+            # 5. REPORT EXPORT (PDF & CSV) - ĐÃ ĐƯA VÀO TRƯỚC st.stop()
+            # ==========================================
+            st.markdown("---")
+            st.markdown("#### 📑 Export Actionable Report")
+            
+            import streamlit.components.v1 as components
+            col_csv, col_pdf, _ = st.columns([2, 2, 6])
+            
+            with col_csv:
+                # FIX: Đã sửa 'risk_top' thành 'risk_top_5'
+                csv_data = risk_top_5.to_csv(index=False).encode('utf-8-sig')
+                st.download_button(
+                    label="📥 Download Watchlist (CSV)",
+                    data=csv_data,
+                    file_name="High_Risk_Watchlist.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
                 
-                import streamlit.components.v1 as components
-                
-                col_csv, col_pdf, _ = st.columns([2, 2, 6])
-                
-                with col_csv:
-                    csv_data = risk_top.to_csv(index=False).encode('utf-8-sig')
-                    st.download_button(
-                        label="📥 Download Watchlist (CSV)",
-                        data=csv_data,
-                        file_name=f"High_Risk_Watchlist.csv",
-                        mime="text/csv",
-                        use_container_width=True
-                    )
-                    
-                with col_pdf:
-                    if st.button("🖨️ Save as PDF Report", use_container_width=True):
-                        components.html("<script>window.parent.print();</script>", height=0)
-                
-                # --- CSS FORMATTING FOR CLEAN PDF PRINT ---
-                st.markdown("""
-                <style>
-                @media print {
-                    [data-testid="stSidebar"] { display: none !important; }
-                    header { display: none !important; }
-                    .stButton, .stDownloadButton { display: none !important; }
-                    @page { size: A4 landscape; margin: 10mm; }
-                    .stApp { background-color: white !important; }
-                }
-                </style>
-                """, unsafe_allow_html=True)
+            with col_pdf:
+                if st.button("🖨️ Save as PDF Report", use_container_width=True):
+                    components.html("<script>window.parent.print();</script>", height=0)
+            
+            st.markdown("""
+            <style>
+            @media print {
+                [data-testid="stSidebar"] { display: none !important; }
+                header { display: none !important; }
+                .stButton, .stDownloadButton { display: none !important; }
+                @page { size: A4 landscape; margin: 10mm; }
+                .stApp { background-color: white !important; }
+            }
+            </style>
+            """, unsafe_allow_html=True)
 
-            else:
-                st.success("🎉 Excellent! All products are stable with no significant risks.")
-    
-    # CRITICAL: Stop app execution here so it doesn't run the detailed loop below
+    # CRITICAL: Lệnh st.stop() nằm cuối cùng để ngăn chạy phần details bên dưới
     st.stop()
 # ==============================================================================
 # ==============================================================================
