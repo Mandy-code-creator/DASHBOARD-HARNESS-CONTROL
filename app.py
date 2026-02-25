@@ -525,18 +525,18 @@ if view_mode == "📊 Executive KPI Dashboard":
             el_yield = df_kpi['EL_Pass'].mean() * 100
             
             # --- BIG METRICS DISPLAY ---
-                    st.markdown("### 🏆 Overall Quality Metrics")
-                    col1, col2, col3, col4, col5 = st.columns(5)
+            st.markdown("### 🏆 Overall Quality Metrics")
+            col1, col2, col3, col4, col5 = st.columns(5)
                     
-                    col1.metric("📦 Total Coils Tested", f"{total_coils:,}")
+            col1.metric("📦 Total Coils Tested", f"{total_coils:,}")
                     
-                    delta_val = f"{yield_rate - 100:.1f}%" if yield_rate < 100 else "Perfect"
-                    col2.metric("✅ Overall Yield Rate", f"{yield_rate:.1f}%", delta_val, delta_color="normal" if yield_rate == 100 else "inverse")
-                    col3.metric("🎯 TS Pass Rate", f"{ts_yield:.1f}%")
-                    col4.metric("🎯 YS Pass Rate", f"{ys_yield:.1f}%")
-                    col5.metric("🎯 EL Pass Rate", f"{el_yield:.1f}%")
+            delta_val = f"{yield_rate - 100:.1f}%" if yield_rate < 100 else "Perfect"
+            col2.metric("✅ Overall Yield Rate", f"{yield_rate:.1f}%", delta_val, delta_color="normal" if yield_rate == 100 else "inverse")
+            col3.metric("🎯 TS Pass Rate", f"{ts_yield:.1f}%")
+            col4.metric("🎯 YS Pass Rate", f"{ys_yield:.1f}%")
+            col5.metric("🎯 EL Pass Rate", f"{el_yield:.1f}%")
                     
-                    st.markdown("---")
+            st.markdown("---")
             
             # --- 3. HIGH-RISK WATCHLIST ---
             st.markdown("### ⚠️ High-Risk Specs Watchlist")
